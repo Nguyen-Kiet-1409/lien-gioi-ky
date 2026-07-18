@@ -1,37 +1,82 @@
 <script setup>
-import { RouterLink, RouterView } from 'vue-router'
+import { ref, onMounted, watch } from 'vue'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router' // Thêm useRouter để chuyển trang
+
+const route = useRoute()
+const router = useRouter() // Khởi tạo router
+
+// Biến lưu trữ thông tin người chơi
+const playerInfo = ref({
+  username: 'Khách',
+  level: 1,
+  gold: 0,
+  diamonds: 0
+})
+
+// Hàm đọc dữ liệu từ LocalStorage
+const loadPlayerData = () => {
+  const savedData = localStorage.getItem('currentUser')
+  if (savedData) {
+    playerInfo.value = JSON.parse(savedData)
+  }
+}
+
+// Chạy hàm khi trang vừa load
+onMounted(() => {
+  loadPlayerData()
+})
+
+// Theo dõi khi chuyển trang thì load lại dữ liệu
+watch(route, () => {
+  loadPlayerData()
+})
+
+// HÀM ĐĂNG XUẤT
+const handleLogout = () => {
+  if(confirm('Bạn có chắc chắn muốn thoát game không?')) {
+    localStorage.removeItem('currentUser') // Xé vé
+    playerInfo.value = { username: 'Khách', level: 1, gold: 0, diamonds: 0 } // Reset thông tin
+    router.push('/login') // Đá về màn hình đăng nhập
+  }
+}
 </script>
 
 <template>
   <div class="game-container">
-    <!-- 1. HEADER: Thanh thông tin tài khoản -->
-    <header class="top-bar">
+    <!-- HEADER -->
+    <header class="top-bar" v-if="route.path !== '/login'">
       <div class="player-profile">
         <div class="avatar">🧙‍♂️</div>
         <div class="info">
-          <span class="name">Pepy</span>
-          <span class="level">Lv. 10</span>
+          <span class="name">{{ playerInfo.username }}</span>
+          <span class="level">Lv. {{ playerInfo.level || 1 }}</span>
         </div>
       </div>
       
       <div class="resources">
         <div class="resource-item">⚡ 50/50</div>
-        <div class="resource-item">💰 1,500</div>
-        <div class="resource-item">💎 300</div>
+        <!-- Ép hiển thị đúng biến gold và diamonds -->
+        <div class="resource-item">💰 {{ playerInfo.gold !== undefined ? playerInfo.gold : 0 }}</div>
+        <div class="resource-item">💎 {{ playerInfo.diamonds !== undefined ? playerInfo.diamonds : 0 }}</div>
       </div>
     </header>
 
     <div class="layout-body">
-      <!-- 2. NAVIGATION: Menu điều hướng bên trái -->
-      <nav class="side-menu">
-        <RouterLink to="/" class="menu-btn">🏠 Trang Chủ</RouterLink>
-        <RouterLink to="/phieu-luu" class="menu-btn">🗺️ Phiêu Lưu</RouterLink>
-        <RouterLink to="/che-do" class="menu-btn">⚔️ Chế Độ</RouterLink>
-        <RouterLink to="/nhan-vat" class="menu-btn">🎴 Nhân Vật</RouterLink>
+      <!-- SIDE MENU -->
+      <nav class="side-menu" v-if="route.path !== '/login'">
+        <div class="menu-links">
+          <RouterLink to="/home" class="menu-btn">🏠 Trang Chủ</RouterLink>
+          <RouterLink to="/phieu-luu" class="menu-btn">🗺️ Phiêu Lưu</RouterLink>
+          <RouterLink to="/che-do" class="menu-btn">⚔️ Chế Độ</RouterLink>
+          <RouterLink to="/nhan-vat" class="menu-btn">🎴 Nhân Vật</RouterLink>
+        </div>
+
+        <!-- NÚT ĐĂNG XUẤT NẰM Ở ĐÁY -->
+        <button class="logout-btn" @click="handleLogout">🚪 Đăng Xuất</button>
       </nav>
 
-      <!-- 3. MAIN CONTENT: Khu vực hiển thị nội dung chính -->
-      <main class="content-area">
+      <!-- MAIN CONTENT -->
+      <main class="content-area" :style="route.path === '/login' ? { padding: 0 } : {}">
         <RouterView />
       </main>
     </div>
@@ -39,11 +84,11 @@ import { RouterLink, RouterView } from 'vue-router'
 </template>
 
 <style scoped>
-/* Reset cơ bản để full màn hình */
+/* Reset cơ bản */
 :global(body) {
   margin: 0;
   padding: 0;
-  background-color: #121212; /* Màu nền tối chuẩn game */
+  background-color: #121212;
   color: white;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
@@ -51,10 +96,10 @@ import { RouterLink, RouterView } from 'vue-router'
 .game-container {
   display: flex;
   flex-direction: column;
-  height: 100vh; /* Cao bằng 100% màn hình */
+  height: 100vh;
 }
 
-/* --- Style cho HEADER --- */
+/* HEADER */
 .top-bar {
   display: flex;
   justify-content: space-between;
@@ -65,40 +110,13 @@ import { RouterLink, RouterView } from 'vue-router'
   border-bottom: 2px solid #3a3a45;
 }
 
-.player-profile {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+.player-profile { display: flex; align-items: center; gap: 10px; }
+.avatar { font-size: 30px; background: #3a3a45; border-radius: 50%; padding: 5px; }
+.info { display: flex; flex-direction: column; }
+.name { font-weight: bold; font-size: 16px; color: #f1c40f; }
+.level { font-size: 12px; color: #aaa; }
 
-.avatar {
-  font-size: 30px;
-  background: #3a3a45;
-  border-radius: 50%;
-  padding: 5px;
-}
-
-.info {
-  display: flex;
-  flex-direction: column;
-}
-
-.name {
-  font-weight: bold;
-  font-size: 16px;
-  color: #f1c40f; /* Màu vàng nổi bật */
-}
-
-.level {
-  font-size: 12px;
-  color: #aaa;
-}
-
-.resources {
-  display: flex;
-  gap: 15px;
-}
-
+.resources { display: flex; gap: 15px; }
 .resource-item {
   background: rgba(0, 0, 0, 0.5);
   padding: 5px 15px;
@@ -107,14 +125,14 @@ import { RouterLink, RouterView } from 'vue-router'
   border: 1px solid #3a3a45;
 }
 
-/* --- Style cho PHẦN THÂN (Menu + Content) --- */
+/* PHẦN THÂN */
 .layout-body {
   display: flex;
-  flex: 1; /* Chiếm hết phần chiều cao còn lại */
+  flex: 1;
   overflow: hidden;
 }
 
-/* --- Style cho MENU TRÁI --- */
+/* MENU TRÁI */
 .side-menu {
   width: 200px;
   background-color: #1a1a1f;
@@ -122,6 +140,12 @@ import { RouterLink, RouterView } from 'vue-router'
   display: flex;
   flex-direction: column;
   padding: 20px 10px;
+  justify-content: space-between; /* Đẩy nội dung ra 2 đầu (Menu ở trên, Nút ở dưới) */
+}
+
+.menu-links {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
 }
 
@@ -140,16 +164,35 @@ import { RouterLink, RouterView } from 'vue-router'
   transform: translateX(5px);
 }
 
-/* Hiệu ứng khi nút đang được chọn */
 .router-link-active {
   background-color: #2c3e50;
-  color: #42b983; /* Màu xanh đặc trưng của Vue */
+  color: #42b983;
   border-left: 4px solid #42b983;
 }
 
-/* --- Style cho MAIN CONTENT --- */
+/* NÚT ĐĂNG XUẤT MỚI */
+.logout-btn {
+  background-color: #c0392b; /* Màu đỏ nguy hiểm */
+  color: white;
+  border: none;
+  padding: 12px 15px;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: 0.2s;
+  text-align: left;
+  font-size: 15px;
+  font-family: inherit;
+}
+
+.logout-btn:hover {
+  background-color: #e74c3c;
+  transform: translateX(5px); /* Trượt nhẹ sang phải giống các menu khác */
+}
+
+/* MAIN CONTENT */
 .content-area {
-  flex: 1; /* Chiếm hết không gian còn lại bên phải */
+  flex: 1;
   padding: 20px;
   background-color: #121212;
   overflow-y: auto;
