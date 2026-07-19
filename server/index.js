@@ -6,6 +6,7 @@ require('dotenv').config();
 const Card = require('./models/Card');
 const bcrypt = require('bcryptjs');
 const User = require('./models/User');
+const Banner = require('./models/Banner');
 
 const app = express();
 
@@ -13,8 +14,8 @@ const app = express();
 app.use(cors());
 
 // Mở rộng giới hạn nhận dữ liệu lên 10 Megabyte (10mb)
-app.use(express.json({ limit: '10mb' })); 
-app.use(express.urlencoded({ limit: '10mb', extended: true })); // Thêm dòng này để hỗ trợ các form dữ liệu khác
+app.use(express.json({ limit: '50mb' })); 
+app.use(express.urlencoded({ limit: '50mb', extended: true })); // Thêm dòng này để hỗ trợ các form dữ liệu khác
 
 // Kết nối với MongoDB Atlas
 mongoose.connect(process.env.MONGO_URI)
@@ -121,5 +122,137 @@ app.post('/api/login', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Lỗi máy chủ khi đăng nhập!' });
+  }
+});
+
+// ==========================================
+// API LẤY DANH SÁCH BANNER (Cho Game)
+// ==========================================
+app.get('/api/banners', async (req, res) => {
+  try {
+    // Lấy Banner và nạp toàn bộ thông tin thẻ bài mà Admin đã nhặt vào
+    const banners = await Banner.find().populate('featuredCards');
+    
+    const formattedBanners = banners.map(banner => {
+      return {
+        id: banner.bannerId,
+        title: banner.title,
+        description: banner.description,
+        image: banner.image,
+        pool: banner.featuredCards // Kho bài là những gì Admin tự tay chọn
+      };
+    });
+
+    res.status(200).json(formattedBanners);
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi server khi tải Banner!' });
+  }
+});
+
+// ==========================================
+// API LẤY DANH SÁCH THẺ BÀI (Cho Admin chọn vào Banner)
+// ==========================================
+app.get('/api/cards/all', async (req, res) => {
+  try {
+    const allCards = await Card.find(); 
+    res.status(200).json(allCards);
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi khi tải danh sách thẻ!' });
+  }
+});
+
+// ==========================================
+// API THÊM BANNER MỚI (DÀNH CHO ADMIN)
+// ==========================================
+app.post('/api/banners', async (req, res) => {
+  try {
+    const { bannerId, title, description, image, isLimited, featuredCards } = req.body;
+    
+    // 1. Kiểm tra xem mã Banner có bị trùng không
+    const existingBanner = await Banner.findOne({ bannerId });
+    if (existingBanner) {
+      return res.status(400).json({ message: 'Mã Banner này đã tồn tại!' });
+    }
+
+    // 2. Lưu Banner mới vào Database
+    const newBanner = new Banner({
+      bannerId,
+      title,
+      description,
+      image,
+      isLimited,
+      featuredCards
+    });
+
+    await newBanner.save();
+    res.status(201).json({ message: '🎉 Đã xuất bản Banner thành công!' });
+  } catch (error) {
+    console.error('Lỗi khi tạo Banner:', error);
+    res.status(500).json({ message: 'Lỗi server không thể lưu Banner!' });
+  }
+});
+
+// ==========================================
+// API CẬP NHẬT THẺ BÀI (SỬA NHÂN VẬT)
+// ==========================================
+app.put('/api/cards/:id', async (req, res) => {
+  try {
+    const cardId = req.params.id;
+    const updateData = req.body;
+
+    // Tìm thẻ bài theo ID và cập nhật dữ liệu mới (thông số {new: true} để trả về data sau khi sửa)
+    const updatedCard = await Card.findByIdAndUpdate(cardId, updateData, { new: true });
+
+    if (!updatedCard) {
+      return res.status(404).json({ message: 'Không tìm thấy thẻ bài để sửa!' });
+    }
+
+    res.status(200).json({ message: 'Cập nhật thẻ bài thành công!', card: updatedCard });
+  } catch (error) {
+    console.error('Lỗi khi cập nhật thẻ:', error);
+    res.status(500).json({ message: 'Lỗi server không thể cập nhật!' });
+  }
+});
+
+// ==========================================
+// API CẤT BÀI VÀO TÚI ĐỒ (Sau khi Gacha xong)
+// ==========================================
+app.post('/api/user/save-gacha', async (req, res) => {
+  try {
+    const { userId, newCardIds } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'Không tìm thấy tài khoản!' });
+
+    // Đổi chữ "card" thành "cardId" cho khớp với Schema của bạn
+    const itemsToAdd = newCardIds.map(id => ({
+      cardId: id, 
+      level: 1,
+      // (Không cần gửi equip vì trong Schema bạn đã set default là 0 rồi)
+    }));
+
+    user.inventory.push(...itemsToAdd);
+    await user.save();
+
+    res.status(200).json({ message: 'Đã cất bài vào túi đồ an toàn!' });
+  } catch (error) {
+    console.error('Lỗi khi cất bài:', error);
+    res.status(500).json({ message: 'Lỗi server khi lưu bài!' });
+  }
+});
+
+// ==========================================
+// API LẤY TÚI ĐỒ ĐỂ XEM (Vào Kho Nhân Vật)
+// ==========================================
+app.get('/api/user/:id/inventory', async (req, res) => {
+  try {
+    // Sửa '.populate("inventory.card")' thành '.populate("inventory.cardId")'
+    const user = await User.findById(req.params.id).populate('inventory.cardId');
+    if (!user) return res.status(404).json({ message: 'Không tìm thấy user!' });
+
+    res.status(200).json(user.inventory);
+  } catch (error) {
+    console.error('Lỗi khi tải túi đồ:', error);
+    res.status(500).json({ message: 'Lỗi server khi tải túi đồ!' });
   }
 });

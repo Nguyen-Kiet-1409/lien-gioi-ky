@@ -44,7 +44,7 @@ const handleLogout = () => {
 <template>
   <div class="game-container">
     <!-- HEADER -->
-    <header class="top-bar" v-if="route.path !== '/login'">
+    <header class="top-bar" v-if="route.path !== '/login' && route.path !== '/admin'">
       <div class="player-profile">
         <div class="avatar">🧙‍♂️</div>
         <div class="info">
@@ -63,7 +63,7 @@ const handleLogout = () => {
 
     <div class="layout-body">
       <!-- SIDE MENU -->
-      <nav class="side-menu" v-if="route.path !== '/login'">
+      <nav class="side-menu" v-if="route.path !== '/login' && route.path !== '/admin'">
         <div class="menu-links">
           <RouterLink to="/home" class="menu-btn">🏠 Trang Chủ</RouterLink>
           <RouterLink to="/phieu-luu" class="menu-btn">🗺️ Phiêu Lưu</RouterLink>
@@ -76,7 +76,7 @@ const handleLogout = () => {
       </nav>
 
       <!-- MAIN CONTENT -->
-      <main class="content-area" :style="route.path === '/login' ? { padding: 0 } : {}">
+      <main class="content-area" :style="(route.path === '/login' || route.path === '/admin') ? { padding: 0 } : {}">
         <RouterView />
       </main>
     </div>

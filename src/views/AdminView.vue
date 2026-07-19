@@ -1,98 +1,170 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue' // SỬA LỖI 1: Thêm onMounted vào đây!
 
-// Dữ liệu trống để nhập thẻ bài mới (Khớp 100% với Card Model Backend)
-const newCard = ref({
-  name: '',
-  image: '',
-  rarity: 'R',
-  type: 'Đấu Sĩ',
-  color: '#bdc3c7',
-  stars: 1,
-  lore: '',
+// =====================================
+// KHU VỰC XỬ LÝ THẺ BÀI
+// =====================================
+// 1. Khai báo biến quản lý trạng thái
+const editingId = ref(null) // Biến lưu ID của thẻ đang được sửa (Nếu null là đang Tạo Mới)
+
+// Khai báo form rỗng mặc định để dùng lại nhiều lần
+const emptyCardForm = {
+  name: '', image: '', rarity: 'R', type: 'Đấu Sĩ', color: '#bdc3c7', stars: 1, lore: '',
   stats: { hp: 1000, atk: 100, spd: 50 },
   skills: {
     normal: { name: '', desc: '' },
     active: { name: '', desc: '' },
     ultimate: { name: '', desc: '' }
   }
+}
+
+// Biến newCard giờ sẽ lấy bản sao của form rỗng
+const newCard = ref(JSON.parse(JSON.stringify(emptyCardForm)))
+const cardList = ref([]) // Sẽ được tự động nạp dữ liệu thật từ DB
+
+// 2. Load danh sách bài thật lúc vào trang
+onMounted(async () => {
+  await loadAllCards() // Tách ra thành hàm riêng để dễ gọi lại
 })
 
-// Danh sách thẻ bài giả lập (Sau này sẽ lấy từ Database lên)
-const cardList = ref([
-  { name: 'Thánh Nữ Ánh Sáng', rarity: 'SSR', type: 'Hỗ Trợ' },
-  { name: 'Hiệp Sĩ Rừng Xanh', rarity: 'SR', type: 'Đấu Sĩ' }
-])
+const loadAllCards = async () => {
+  try {
+    const res = await fetch('http://localhost:5000/api/cards/all')
+    const data = await res.json()
+    urCards.value = data     // Gán cho danh sách chọn vào Banner
+    cardList.value = data    // Gán luôn cho danh sách hiển thị bên trái
+  } catch (error) {
+    console.error('Lỗi khi load thẻ:', error)
+  }
+}
 
-// Biến để móc vào cái thẻ <input type="file">
+// 3. HÀM CHỌN THẺ ĐỂ SỬA (Click từ danh sách)
+const selectCardToEdit = (card) => {
+  editingId.value = card._id
+  // Ép dữ liệu thẻ bài vào Form (Dùng JSON.parse để ngắt kết nối tham chiếu)
+  newCard.value = JSON.parse(JSON.stringify(card))
+  
+  // Kéo màn hình lên trên cùng chỗ Form
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+// HÀM HỦY SỬA (Quay về Tạo mới)
+const cancelEdit = () => {
+  editingId.value = null
+  newCard.value = JSON.parse(JSON.stringify(emptyCardForm))
+}
+
+// 4. HÀM GỬI LÊN SERVER (TỰ ĐỘNG CHIA NHÁNH TẠO MỚI / CẬP NHẬT)
+const submitCard = async () => {
+  if (!newCard.value.name) return alert("Vui lòng nhập tên nhân vật!")
+  
+  try {
+    const isEditing = !!editingId.value
+    // Nếu có editingId thì gọi cổng PUT (Sửa), không thì gọi POST (Tạo)
+    const url = isEditing ? `http://localhost:5000/api/cards/${editingId.value}` : 'http://localhost:5000/api/cards'
+    const method = isEditing ? 'PUT' : 'POST'
+
+    const response = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newCard.value)
+    })
+
+    const data = await response.json()
+
+    if (response.ok) {
+      alert(`🎉 ${isEditing ? 'Cập nhật' : 'Tạo'} thẻ bài ${newCard.value.name} thành công!`)
+      await loadAllCards() // Gọi hàm load lại danh sách bài mới nhất từ Database
+      cancelEdit()         // Reset form về trạng thái trống
+    } else {
+      alert('❌ Lỗi: ' + data.message)
+    }
+  } catch (error) {
+    alert('❌ Không thể kết nối tới Backend!')
+  }
+}
+
 const fileInput = ref(null)
 
-// Hàm mở cửa sổ chọn file khi click vào cái khung nét đứt
 const triggerFileInput = () => {
   fileInput.value.click()
 }
 
-// Hàm xử lý khi người dùng đã chọn xong ảnh từ máy tính
 const handleImageUpload = (event) => {
   const file = event.target.files[0]
   if (!file) return
 
-  // Giới hạn dung lượng ảnh (Khuyên dùng dưới 2MB để Database đỡ nặng)
   if (file.size > 2 * 1024 * 1024) {
     alert('Vui lòng chọn ảnh nhẹ hơn 2MB để hệ thống chạy mượt nhé!')
     return
   }
 
-  // Phép thuật FileReader biến ảnh thành chuỗi mã (Base64)
   const reader = new FileReader()
   reader.onload = (e) => {
-    // Lưu thẳng đoạn mã này vào biến image, trình duyệt sẽ tự hiểu nó là hình ảnh
     newCard.value.image = e.target.result 
   }
   reader.readAsDataURL(file)
 }
 
-const submitCard = async () => {
-  if (!newCard.value.name) {
-    alert("Vui lòng nhập tên nhân vật!")
+// =====================================
+// KHU VỰC XỬ LÝ BANNER
+// =====================================
+const bannerForm = ref({
+  bannerId: '',
+  title: '',
+  description: '',
+  image: '',
+  isLimited: false,
+  featuredCards: []
+})
+
+const urCards = ref([])
+
+const handleBannerImage = (event) => {
+  const file = event.target.files[0]
+  if (file) {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      bannerForm.value.image = e.target.result
+    }
+    reader.readAsDataURL(file)
+  }
+}
+
+// Đã import onMounted ở trên nên giờ hàm này sẽ chạy ngon lành!
+onMounted(async () => {
+  try {
+    // Gọi API mới để lấy toàn bộ thẻ bài
+    const res = await fetch('http://localhost:5000/api/cards/all')
+    const data = await res.json()
+    urCards.value = data // (Biến này giờ chứa tất cả thẻ, bạn không cần đổi tên biến cũng được)
+  } catch (error) {
+    console.error('Lỗi khi load thẻ:', error)
+  }
+})
+
+const submitBanner = async () => {
+  if (!bannerForm.value.bannerId || !bannerForm.value.title) {
+    alert('Vui lòng nhập Mã Banner và Tiêu đề!')
     return
   }
-  
+
   try {
-    // Dùng fetch để đóng gói dữ liệu và gửi tới Cổng số 5000 của Backend
-    const response = await fetch('http://localhost:5000/api/cards', {
-      method: 'POST', // Phương thức gửi dữ liệu lên
-      headers: {
-        'Content-Type': 'application/json' // Báo cho server biết đây là file JSON
-      },
-      body: JSON.stringify(newCard.value) // Biến cái Object thẻ bài thành chữ JSON
+    const response = await fetch('http://localhost:5000/api/banners', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bannerForm.value)
     })
-
-    // Đọc phản hồi từ Backend trả về
+    
     const data = await response.json()
-
     if (response.ok) {
-      alert(`🎉 Thành công! Thẻ bài ${newCard.value.name} đã hạ cánh an toàn vào Database!`)
-      
-      // Thêm ngay thẻ vừa tạo vào danh sách bên trái cho ngầu
-      cardList.value.push({
-        name: newCard.value.name,
-        rarity: newCard.value.rarity,
-        type: newCard.value.type
-      })
-
-      // Reset lại form để tạo tướng tiếp theo
-      newCard.value.name = ''
-      newCard.value.image = ''
-      newCard.value.lore = ''
-      // (Bạn có thể cho reset thêm các chỉ số nếu muốn)
-      
+      alert(data.message)
+      bannerForm.value = { bannerId: '', title: '', description: '', image: '', isLimited: false, featuredCards: [] }
     } else {
-      alert('❌ Lỗi từ server: ' + data.message)
+      alert('❌ ' + data.message)
     }
   } catch (error) {
-    console.error(error)
-    alert('❌ Không thể kết nối tới Backend! Server đã bật chưa?')
+    alert('Không thể kết nối đến máy chủ!')
   }
 }
 </script>
@@ -108,9 +180,19 @@ const submitCard = async () => {
 
       <h3 class="list-title">Thẻ bài đã tạo:</h3>
       <ul class="mini-card-list">
-        <li v-for="(card, index) in cardList" :key="index">
-          <span class="rarity-tag" :class="card.rarity">{{ card.rarity }}</span>
-          {{ card.name }}
+        <!-- Thêm sự kiện @click vào từng mục -->
+        <li 
+          v-for="(card, index) in cardList" 
+          :key="card._id" 
+          @click="selectCardToEdit(card)"
+          style="cursor: pointer; transition: 0.2s;"
+          title="Click để sửa"
+        >
+          <span class="rarity-tag" :class="card.rarity" :style="{ background: card.color || '#555', color: '#fff' }">
+            {{ card.rarity }}
+          </span>
+          {{ card.name }} 
+          <span style="float: right; font-size: 12px;">✏️</span>
         </li>
       </ul>
     </div>
@@ -118,17 +200,15 @@ const submitCard = async () => {
     <!-- Cột phải: Khung nhập liệu (Form) -->
     <div class="main-content">
       <div class="header">
-        <h1>Tạo Thẻ Bài Mới (Tạo Data Gốc)</h1>
+        <!-- Tên tiêu đề đổi linh hoạt theo chế độ -->
+        <h1>{{ editingId ? '✏️ Chỉnh Sửa Thẻ Bài' : '✨ Tạo Thẻ Bài Mới' }}</h1>
       </div>
 
       <form class="create-form" @submit.prevent="submitCard">
         <!-- Phần 1: Thông tin cơ bản -->
-        <!-- Phần 1: Thông tin cơ bản -->
         <div class="form-section">
           <h3>1. Thông tin cơ bản</h3>
-          
           <div class="basic-info-layout">
-            <!-- Cột trái (70%): Thông tin nhập liệu -->
             <div class="basic-info-left">
               <div class="form-grid">
                 <div class="form-group">
@@ -168,19 +248,14 @@ const submitCard = async () => {
               </div>
             </div>
 
-            <!-- Cột phải (30%): Khung Ảnh Preview phong cách CMS -->
             <div class="basic-info-right">
               <label>Ảnh đại diện (Click để tải lên)</label>
-              
-              <!-- Thêm sự kiện @click="triggerFileInput" vào khung này -->
               <div class="upload-area" @click="triggerFileInput">
                 <img v-if="newCard.image" :src="newCard.image" alt="Character Preview">
                 <div v-else class="upload-placeholder">
                   <span class="icon">📁</span>
                   <p>Tải ảnh từ thiết bị</p>
                 </div>
-
-                <!-- Thẻ input file thật sự (Bị ẩn đi cho đẹp) -->
                 <input 
                   type="file" 
                   ref="fileInput" 
@@ -189,8 +264,6 @@ const submitCard = async () => {
                   style="display: none;"
                 >
               </div>
-
-              <!-- Nút xóa ảnh nếu lỡ chọn nhầm -->
               <button 
                 v-if="newCard.image" 
                 class="remove-img-btn" 
@@ -224,7 +297,6 @@ const submitCard = async () => {
         <!-- Phần 3: Kỹ năng -->
         <div class="form-section">
           <h3>3. Bộ Kỹ Năng</h3>
-          
           <div class="skill-group">
             <div class="skill-header normal">Đánh Thường</div>
             <input type="text" v-model="newCard.skills.normal.name" placeholder="Tên chiêu (VD: Chém gió)">
@@ -244,10 +316,81 @@ const submitCard = async () => {
           </div>
         </div>
 
-        <button type="submit" class="save-btn">💾 Xuất Bản Thẻ Bài Lên Server</button>
+        <div style="display: flex; gap: 15px; margin-top: 20px;">
+          <button type="submit" class="save-btn" style="flex: 1;">
+            💾 {{ editingId ? 'Cập Nhật Thẻ Bài' : 'Xuất Bản Lên Server' }}
+          </button>
+
+          <!-- Nút Hủy chỉ hiện khi đang ở chế độ Sửa -->
+          <button 
+            v-if="editingId" 
+            type="button" 
+            @click="cancelEdit" 
+            class="save-btn" 
+            style="background-color: #7f8c8d; width: 120px;"
+          >
+            ❌ Hủy Sửa
+          </button>
+        </div>
       </form>
-    </div>
-  </div>
+
+      <!-- SỬA LỖI 2: Di chuyển khu vực tạo Banner vào trong div "main-content" -->
+      <!-- ===================================== -->
+      <!-- KHU VỰC TẠO BANNER GACHA -->
+      <!-- ===================================== -->
+      <div class="admin-box" style="margin-top: 40px; border-top: 2px dashed #42b983; padding-top: 30px;">
+        <h2>🎪 Đăng Cai Sự Kiện (Tạo Banner)</h2>
+        
+        <div class="form-group">
+          <label>Mã Banner (VD: limited_01, standard_01):</label>
+          <input v-model="bannerForm.bannerId" type="text" placeholder="Nhập mã không dấu..." />
+        </div>
+
+        <div class="form-group">
+          <label>Tiêu đề Sự Kiện:</label>
+          <input v-model="bannerForm.title" type="text" placeholder="VD: Hắc Ám Trỗi Dậy" />
+        </div>
+
+        <div class="form-group">
+          <label>Mô tả ngắn:</label>
+          <textarea v-model="bannerForm.description" rows="3" placeholder="Nhập nội dung quảng cáo Banner..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Ảnh nền Banner:</label>
+          <input type="file" @change="handleBannerImage" accept="image/*" />
+          <img v-if="bannerForm.image" :src="bannerForm.image" alt="Preview" style="max-height: 150px; margin-top: 10px; border-radius: 8px;">
+        </div>
+
+        <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+          <label style="margin: 0;">Là Banner Giới Hạn (Có thẻ UR độc quyền):</label>
+          <input type="checkbox" v-model="bannerForm.isLimited" style="width: 25px; height: 25px;" />
+        </div>
+
+        <!-- KHO TƯỚNG UR ĐỂ CHỌN -->
+        <div class="form-group" style="background: #2c3e50; padding: 15px; border-radius: 8px;">
+          <label style="color: #f1c40f;">🌟 Chọn danh sách tướng xuất hiện trong Banner này:</label>
+          <p style="font-size: 13px; color: #aaa; margin-bottom: 10px;">
+            ⚠️ Lưu ý: Phải chọn đủ ít nhất 1 thẻ R, 1 thẻ SR và 1 thẻ SSR để thuật toán Gacha không bị lỗi nhé!
+          </p>
+          
+          <div style="display: flex; flex-wrap: wrap; gap: 15px;">
+            <!-- Hiển thị toàn bộ thẻ bài để tick -->
+            <label v-for="card in urCards" :key="card._id" style="display: flex; align-items: center; gap: 5px; cursor: pointer; background: #1e1e24; padding: 5px 10px; border-radius: 5px;">
+              <input type="checkbox" :value="card._id" v-model="bannerForm.featuredCards">
+              <span class="rarity-tag" :class="card.rarity" style="font-size: 10px; padding: 2px 4px;">{{ card.rarity }}</span>
+              <span :style="{color: card.color}">{{ card.name }}</span>
+            </label>
+          </div>
+        </div>
+
+        <button class="submit-btn" @click="submitBanner" style="background-color: #9b59b6; margin-top: 20px;">
+          📢 Xuất Bản Banner
+        </button>
+      </div>
+
+    </div> <!-- Kết thúc main-content -->
+  </div> <!-- Kết thúc admin-layout -->
 </template>
 
 <style scoped>

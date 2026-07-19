@@ -1,80 +1,65 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 
-// 1. Phân loại kho dữ liệu thẻ bài
-const standardPool = [
-  { id: 1, name: 'Chiến Binh Lửa', rarity: 'R', color: '#bdc3c7' },
-  { id: 2, name: 'Hiệp Sĩ Rừng', rarity: 'SR', color: '#9b59b6' },
-  { id: 3, name: 'Thánh Nữ Ánh Sáng', rarity: 'SSR', color: '#f1c40f' }
-]
+// 1. Biến chứa danh sách Banner lấy từ Database
+const banners = ref([])
 
-const limitedPool = [
-  ...standardPool,
-  { id: 4, name: 'Ma Tôn Bóng Tối', rarity: 'UR', color: '#e74c3c' },
-  { id: 5, name: 'Long Thần Băng Giá', rarity: 'UR', color: '#00d2ff' }
-]
-
-// 2. Cấu hình danh sách Banner
-const banners = ref([
-  {
-    id: 'limited_01',
-    title: '🔥 Hắc Ám Trỗi Dậy 🔥',
-    description: 'Sự kiện giới hạn: Tăng mạnh tỷ lệ xuất hiện Ma Tôn Bóng Tối (UR)!',
-    image: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=2070&auto=format&fit=crop', 
-    pool: limitedPool
-  },
-  {
-    id: 'standard_01',
-    title: '🌟 Chiêu Mộ Thường 🌟',
-    description: 'Chiêu mộ các anh hùng cơ bản để xây dựng đội hình của bạn.',
-    image: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=2068&auto=format&fit=crop',
-    pool: standardPool
+// 2. Tự động chạy ra Backend lấy Banner khi vừa vào trang
+onMounted(async () => {
+  try {
+    const response = await fetch('http://localhost:5000/api/banners')
+    const data = await response.json()
+    
+    // Nếu lấy thành công, gán dữ liệu thật vào biến banners để giao diện tự động vẽ ra
+    if (response.ok) {
+      banners.value = data
+    }
+  } catch (error) {
+    console.error('Lỗi khi tải Banner thật:', error)
   }
-])
+})
 
+// ==========================================
+// LOGIC GACHA & BẢO HIỂM (Giữ nguyên như cũ)
+// ==========================================
 const isShowingResult = ref(false)
 const pulledCards = ref([])
-
-// THÊM: Biến đếm Bảo Hiểm (Pity)
 const pityCounter = ref(0) 
 
-// HÀM BỐC 1 LÁ BÀI DỰA TRÊN TỶ LỆ
 const pullSingleCard = (pool) => {
-  // Tăng bộ đếm bảo hiểm lên 1
   pityCounter.value++
-
   let targetRarity = ''
 
-  // KÍCH HOẠT BẢO HIỂM: Đủ 80 roll thì ép ra UR
   if (pityCounter.value >= 80) {
     targetRarity = 'UR'
   } else {
-    // THUẬT TOÁN NHÂN PHẨM: Quay số từ 1 đến 100
     const rand = Math.floor(Math.random() * 100) + 1 
-
     if (rand <= 1) {
-      targetRarity = 'UR'         // 1% (Từ 1)
+      targetRarity = 'UR'         // 1%
     } else if (rand <= 11) {
-      targetRarity = 'SSR'        // 10% (Từ 2 đến 11)
+      targetRarity = 'SSR'        // 10%
     } else if (rand <= 46) {
-      targetRarity = 'SR'         // 35% (Từ 12 đến 46)
+      targetRarity = 'SR'         // 35%
     } else {
-      targetRarity = 'R'          // 54% (Từ 47 đến 100)
+      targetRarity = 'R'          // 54%
     }
   }
 
-  // Lọc ra các lá bài khớp với độ hiếm vừa quay được trong Banner hiện tại
+  // Lọc thẻ trong cái Pool (Kho bài) thật mà Admin đã nhét vào Banner
   let availableCards = pool.filter(card => card.rarity === targetRarity)
 
-  // LOGIC PHỤ: Nếu quay ra UR nhưng Banner Thường không có UR, thì rớt xuống SSR
+  // Nếu rớt rate UR nhưng Banner lại không có tướng UR nào (Banner thường), thì trả về SSR
   if (availableCards.length === 0) {
     availableCards = pool.filter(card => card.rarity === 'SSR')
   }
+  
+  // Nếu vẫn không có SSR, rớt xuống SR (Tránh lỗi do Admin set thiếu bài)
+  if (availableCards.length === 0) {
+    availableCards = pool.filter(card => card.rarity === 'SR')
+  }
 
-  // Chọn ngẫu nhiên 1 lá trong danh sách độ hiếm đó
   const finalCard = availableCards[Math.floor(Math.random() * availableCards.length)]
 
-  // Nếu ra UR (Bất kể là nhờ nhân phẩm hay nhờ bảo hiểm), thì reset bộ đếm về 0
   if (finalCard.rarity === 'UR') {
     pityCounter.value = 0
   }
@@ -82,20 +67,62 @@ const pullSingleCard = (pool) => {
   return finalCard
 }
 
-// 3. Hàm xử lý Gacha chính
-const rollGacha = (times, currentPool) => {
+const rollGacha = async (times, currentPool) => {
+  if (!currentPool || currentPool.length === 0) {
+    alert('Banner này hiện chưa có thẻ bài nào trong kho!')
+    return
+  }
+
   pulledCards.value = [] 
+  const pulledIds = [] // Tạo mảng rỗng để gom ID các thẻ trúng thưởng
   
   for (let i = 0; i < times; i++) {
     const card = pullSingleCard(currentPool)
-    pulledCards.value.push(card)
+    if(card) {
+      pulledCards.value.push(card)
+      pulledIds.push(card._id) // Bỏ ID vào mảng gửi đi
+    }
   }
   
-  isShowingResult.value = true
+  isShowingResult.value = true // Vẫn hiện popup khoe bài rực rỡ
+
+  // ==========================================
+  // GỬI BÀI VỀ BACKEND ĐỂ LƯU VÀO TÚI ĐỒ
+  // ==========================================
+  // Giả sử lúc đăng nhập bạn đã lưu thông tin người chơi vào localStorage
+  const userData = JSON.parse(localStorage.getItem('user')) 
+  
+  if (userData && userData.id) {
+    try {
+      await fetch('http://localhost:5000/api/user/save-gacha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: userData.id,
+          newCardIds: pulledIds // Gửi 1 lúc 10 ID lên cho lẹ
+        })
+      })
+      console.log('✅ Đã cất bài vào túi!')
+    } catch (error) {
+      console.error('❌ Lỗi không cất được bài:', error)
+    }
+  } else {
+    console.warn('⚠️ Bạn đang test Gacha khi chưa đăng nhập. Bài sẽ không được lưu!')
+  }
 }
 
 const closeResult = () => {
   isShowingResult.value = false
+}
+
+// Hàm ép màu chuẩn theo độ hiếm (Bỏ qua màu Admin chọn)
+const getCardColor = (rarity) => {
+  switch(rarity) {
+    case 'UR': return '#e74c3c';  // Đỏ rực
+    case 'SSR': return '#f1c40f'; // Vàng Gold
+    case 'SR': return '#9b59b6';  // Tím
+    default: return '#bdc3c7';    // Xám (R)
+  }
 }
 </script>
 
@@ -142,7 +169,7 @@ const closeResult = () => {
       </div>
     </div>
 
-    <!-- MÀN HÌNH KẾT QUẢ GACHA (Giữ nguyên như cũ) -->
+    <!-- MÀN HÌNH KẾT QUẢ GACHA -->
     <div class="gacha-overlay" v-if="isShowingResult" @click.self="closeResult">
       <div class="result-container">
         <h2 class="result-title">Kết Quả Chiêu Mộ</h2>
@@ -153,13 +180,22 @@ const closeResult = () => {
             :key="index"
             class="pulled-card"
             :style="{ 
-              borderColor: card.color, 
-              boxShadow: `0 0 15px ${card.color}`,
-              animationDelay: `${index * 0.15}s` 
+              borderColor: getCardColor(card.rarity), 
+              boxShadow: `0 0 15px ${getCardColor(card.rarity)}`,
+              animationDelay: `${index * 0.1}s` 
             }"
           >
-            <div class="card-rarity" :style="{ color: card.color }">{{ card.rarity }}</div>
-            <div class="card-name">{{ card.name }}</div>
+            <!-- Lớp hiển thị ảnh nhân vật -->
+            <div class="card-image-container">
+              <img v-if="card.image" :src="card.image" class="card-img" alt="Card Image">
+              <div v-else class="no-image">?</div>
+            </div>
+
+            <!-- Lớp hiển thị thông tin đè lên trên ảnh -->
+            <div class="card-info">
+              <div class="card-rarity" :style="{ color: getCardColor(card.rarity) }">{{ card.rarity }}</div>
+              <div class="card-name">{{ card.name }}</div>
+            </div>
           </div>
         </div>
 
@@ -238,7 +274,77 @@ const closeResult = () => {
 .result-container { display: flex; flex-direction: column; align-items: center; gap: 30px; width: 90%; max-width: 800px; }
 .result-title { color: #fff; font-size: 32px; text-shadow: 0 0 10px #f1c40f; margin: 0; }
 .cards-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; }
-.pulled-card { width: 120px; height: 180px; background-color: #2c3e50; border: 3px solid; border-radius: 10px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 10px; text-align: center; opacity: 0; animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+/* Thiết kế từng lá bài khi quay ra */
+.pulled-card {
+  width: 130px;
+  height: 200px;
+  background-color: #1a1a1a;
+  border: 3px solid;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end; /* Đẩy chữ xuống đáy */
+  position: relative;
+  overflow: hidden; /* Cắt gọn ảnh nếu tràn viền */
+  
+  opacity: 0; 
+  animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Khu vực chứa ảnh nền thẻ */
+.card-image-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1; /* Nằm lớp dưới */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #2c3e50;
+}
+
+.card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* Phóng to ảnh phủ kín khung, không bị méo */
+}
+
+.no-image {
+  font-size: 40px;
+  color: #555;
+  font-weight: bold;
+}
+
+/* Khu vực hiển thị tên và độ hiếm đè lên ảnh */
+.card-info {
+  position: relative;
+  z-index: 2; /* Nằm đè lên lớp ảnh */
+  width: 100%;
+  padding: 15px 5px 10px;
+  background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.6) 60%, rgba(0,0,0,0) 100%);
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.card-rarity {
+  font-size: 28px;
+  font-weight: 900;
+  text-shadow: 0 0 8px currentColor, 0 0 2px #000;
+  line-height: 1;
+  margin-bottom: 5px;
+}
+
+.card-name {
+  color: white;
+  font-size: 13px;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px black;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; /* Nếu tên dài quá thì hiện dấu ... */
+}
 @keyframes popIn { 0% { transform: scale(0.1); opacity: 0; } 80% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
 .card-rarity { font-size: 32px; font-weight: 900; text-shadow: 0 0 5px currentColor; margin-bottom: 10px; }
 .card-name { color: white; font-size: 14px; font-weight: bold; }
