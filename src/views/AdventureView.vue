@@ -1,9 +1,12 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'    
+
+const router = useRouter()
 
 const chapterName = ref("Chương 1: Khu Rừng Khởi Nguyên")
 
-// 1. Thêm tọa độ (x, y) % cho từng ải để tạo hình ziczac/thiên vân
+// 1. Dữ liệu các ải
 const stages = ref([
   { id: 1, name: 'Cửa Rừng', status: 'cleared', stars: 3, cost: 5, missions: ['Hoàn thành ải', 'Không thẻ bài chết', 'Thắng trong 5 hiệp'], x: 15, y: 20 },
   { id: 2, name: 'Đường Mòn', status: 'cleared', stars: 2, cost: 5, missions: ['Hoàn thành ải', 'Máu trên 50%', 'Không dùng thẻ phép'], x: 35, y: 15 },
@@ -21,13 +24,59 @@ const totalStars = computed(() => {
   return stages.value.reduce((sum, stage) => sum + stage.stars, 0)
 })
 
-// 2. Tạo đường kẻ nối các tọa độ ải (SVG path)
 const linePoints = computed(() => {
   return stages.value.map(s => `${s.x},${s.y}`).join(' ')
 })
 
 const selectedStage = ref(null)
 
+// --- BIẾN CHO TÍNH NĂNG CHỌN ĐỘI HÌNH ---
+const inventory = ref([])
+const isSelectingTeam = ref(false)
+const selectedTeam = ref([]) // Mảng chứa tối đa 3 thẻ
+const targetStageForBattle = ref(null) // Lưu lại ải đang định đánh
+
+const getCardColor = (rarity) => {
+  switch(rarity) {
+    case 'UR': return '#e74c3c';
+    case 'SSR': return '#f1c40f';
+    case 'SR': return '#9b59b6';
+    default: return '#bdc3c7';
+  }
+}
+
+// Tải túi đồ và Cập nhật trạng thái bản đồ khi vào trang Phiêu Lưu
+onMounted(async () => {
+  const userData = JSON.parse(localStorage.getItem('currentUser')) || {}
+  
+  // 👉 1. XỬ LÝ MỞ KHÓA BẢN ĐỒ
+  const highestCleared = userData.highestStageCleared || 0
+  
+  stages.value.forEach(stage => {
+    if (stage.id <= highestCleared) {
+      stage.status = 'cleared'
+      stage.stars = 3 // Giả định qua rồi là được 3 sao
+    } else if (stage.id === highestCleared + 1) {
+      stage.status = 'current' // Mở khóa ải tiếp theo
+      stage.stars = 0
+    } else {
+      stage.status = 'locked'
+      stage.stars = 0
+    }
+  })
+
+  // 👉 2. TẢI TÚI ĐỒ (Giữ nguyên như cũ)
+  if (userData && userData.id) {
+    try {
+      const res = await fetch(`http://localhost:5000/api/user/${userData.id}/inventory`)
+      if (res.ok) inventory.value = await res.json()
+    } catch (error) {
+      console.error('Lỗi tải túi đồ:', error)
+    }
+  }
+})
+
+// Mở popup thông tin ải
 const openStage = (stage) => {
   if (stage.status !== 'locked') {
     selectedStage.value = stage
@@ -38,9 +87,52 @@ const closeStage = () => {
   selectedStage.value = null
 }
 
+// Khi bấm "Vào Chiến Lập Tức" -> Chuyển sang màn hình chọn tướng
 const enterBattle = () => {
-  alert(`Đang tải ải ${selectedStage.value.name}... Sắp vào đánh rồi! ⚔️`)
-  closeStage()
+  targetStageForBattle.value = selectedStage.value
+  selectedStage.value = null // Đóng popup ải
+  isSelectingTeam.value = true // Mở popup chọn tướng
+}
+
+// Logic chọn / bỏ chọn thẻ bài vào đội hình
+const toggleCardSelection = (item) => {
+  // Kiểm tra xem thẻ này đã có trong đội hình chưa
+  const index = selectedTeam.value.findIndex(card => card._id === item._id)
+  
+  if (index > -1) {
+    // Nếu có rồi thì rút ra khỏi đội
+    selectedTeam.value.splice(index, 1)
+  } else {
+    // Nếu chưa có, kiểm tra giới hạn 3 người
+    if (selectedTeam.value.length < 3) {
+      selectedTeam.value.push(item)
+    } else {
+      alert('Đội hình đã đầy! Tối đa chỉ được mang 3 Tướng.')
+    }
+  }
+}
+
+// Xác nhận xuất chiến
+const confirmStartBattle = () => {
+  if (selectedTeam.value.length === 0) {
+    alert('Vui lòng chọn ít nhất 1 Tướng để xuất chiến!')
+    return
+  }
+  
+  // 1. Lưu tạm đội hình và ải vào LocalStorage để trang Battle đọc
+  localStorage.setItem('battleData', JSON.stringify({
+    team: selectedTeam.value,
+    stage: targetStageForBattle.value
+  }))
+
+  // 2. Chuyển sang trang chiến đấu
+  router.push('/battle')
+}
+
+const cancelTeamSelection = () => {
+  isSelectingTeam.value = false
+  selectedTeam.value = []
+  targetStageForBattle.value = null
 }
 </script>
 
@@ -109,6 +201,62 @@ const enterBattle = () => {
           <button class="btn battle" @click="enterBattle">Vào Chiến Lập Tức</button>
         </div>
       </div>
+
+      <!-- TÍNH NĂNG MỚI: POPUP CHỌN ĐỘI HÌNH TRƯỚC KHI ĐÁNH -->
+      <div class="stage-overlay" v-if="isSelectingTeam" @click.self="cancelTeamSelection">
+        <div class="team-modal">
+          <h2 style="color: #f1c40f; text-align: center; margin-top: 0;">Chuẩn Bị Đội Hình</h2>
+          <p style="text-align: center; color: #aaa; margin-bottom: 20px;">Ải: {{ targetStageForBattle?.name }} | Đã chọn: {{ selectedTeam.length }}/3</p>
+          
+          <!-- 3 Ô chứa tướng đã chọn -->
+          <div class="team-slots">
+            <div 
+              v-for="i in 3" :key="i" 
+              class="team-slot" 
+              @click="selectedTeam[i-1] ? toggleCardSelection(selectedTeam[i-1]) : null"
+            >
+              <!-- Nếu ô đó có Tướng -->
+              <template v-if="selectedTeam[i-1]">
+                <img v-if="selectedTeam[i-1].cardId?.image" :src="selectedTeam[i-1].cardId?.image" class="slot-img">
+                <div class="slot-remove-badge">✖</div>
+              </template>
+              <!-- Nếu ô trống -->
+              <span v-else class="empty-icon">+</span>
+            </div>
+          </div>
+
+          <h3 style="border-bottom: 1px solid #444; padding-bottom: 5px; margin-top: 20px;">Kho Nhân Vật</h3>
+          
+          <!-- Lưới Chọn Tướng -->
+          <div class="mini-inventory">
+            <div 
+              v-for="item in inventory" 
+              :key="item._id"
+              class="mini-card"
+              :class="{ 'is-selected': selectedTeam.find(c => c._id === item._id) }"
+              :style="{ borderColor: getCardColor(item.cardId?.rarity) }"
+              @click="toggleCardSelection(item)"
+            >
+              <div class="mini-level">Lv.{{ item.level }}</div>
+              <img v-if="item.cardId?.image" :src="item.cardId?.image" class="mini-img">
+              <div v-else class="mini-no-image">🧙‍♂️</div>
+              
+              <!-- Lớp phủ khi bị chọn -->
+              <div v-if="selectedTeam.find(c => c._id === item._id)" class="selected-overlay">
+                <span>Đã Chọn</span>
+              </div>
+            </div>
+            <div v-if="inventory.length === 0" style="color: #aaa; text-align: center; width: 100%;">Túi đồ trống không!</div>
+          </div>
+
+          <div class="modal-actions" style="margin-top: 20px;">
+            <button class="btn cancel" @click="cancelTeamSelection">Trở lại</button>
+            <button class="btn battle" @click="confirmStartBattle" :disabled="selectedTeam.length === 0">
+              Xuất Chiến ⚔️
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -123,21 +271,91 @@ const enterBattle = () => {
 }
 
 /* --- HEADER GỌN GÀNG --- */
+/* --- FIX LỖI HEADER BỊ DỒN CHỮ --- */
 .chapter-header {
   background: #1a1a1f;
   padding: 15px 20px;
   border-radius: 12px;
   border: 1px solid #3a3a45;
   display: flex;
+  flex-wrap: wrap; /* Cho phép rớt dòng nếu thiếu chỗ */
   justify-content: space-between;
   align-items: center;
+  gap: 15px; /* Giữ khoảng cách khi rớt dòng */
 }
 
 .chapter-title {
   margin: 0;
   color: #fff;
   font-size: 20px;
+  white-space: nowrap; /* Ép không cho chữ tự xuống dòng chẻ nhỏ ra */
 }
+
+/* --- GIAO DIỆN CHỌN ĐỘI HÌNH --- */
+.team-modal {
+  background: #1e1e24;
+  border: 2px solid #f1c40f;
+  padding: 25px;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.9);
+}
+
+.team-slots {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+}
+
+.team-slot {
+  width: 80px;
+  height: 80px;
+  border: 2px dashed #555;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.05);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+  transition: 0.2s;
+}
+
+.team-slot:hover { border-color: #f1c40f; background: rgba(241, 196, 15, 0.1); }
+.slot-img { width: 100%; height: 100%; object-fit: cover; }
+.empty-icon { font-size: 30px; color: #555; font-weight: bold; }
+.slot-remove-badge {
+  position: absolute; top: 0; right: 0; background: rgba(231, 76, 60, 0.9);
+  color: white; width: 20px; height: 20px; display: flex; justify-content: center; align-items: center; font-size: 10px; font-weight: bold; border-bottom-left-radius: 8px;
+}
+
+.mini-inventory {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 10px 0;
+}
+
+.mini-card {
+  min-width: 70px; width: 70px; height: 90px;
+  border: 2px solid; border-radius: 8px; background: #222;
+  position: relative; cursor: pointer; overflow: hidden;
+  transition: transform 0.1s;
+}
+.mini-card:active { transform: scale(0.95); }
+.mini-level { position: absolute; top: 2px; left: 2px; font-size: 9px; background: rgba(0,0,0,0.8); padding: 1px 4px; border-radius: 4px; z-index: 2; }
+.mini-img { width: 100%; height: 100%; object-fit: cover; }
+.mini-no-image { display:flex; justify-content:center; align-items:center; height:100%; font-size:24px; }
+
+.selected-overlay {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 3;
+}
+.selected-overlay span { background: #e74c3c; font-size: 10px; padding: 2px 5px; border-radius: 4px; font-weight: bold; }
+
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
 
 .rewards-compact {
   display: flex;

@@ -256,3 +256,80 @@ app.get('/api/user/:id/inventory', async (req, res) => {
     res.status(500).json({ message: 'Lỗi server khi tải túi đồ!' });
   }
 });
+
+// ==========================================
+// API NÂNG CẤP THẺ BÀI (LEVEL UP)
+// ==========================================
+app.post('/api/user/upgrade-card', async (req, res) => {
+  try {
+    const { userId, inventoryId } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'Không tìm thấy tài khoản!' });
+
+    // Lấy thẻ bài cụ thể trong túi đồ dựa trên ID của túi
+    const item = user.inventory.id(inventoryId);
+    if (!item) return res.status(404).json({ message: 'Không tìm thấy thẻ này!' });
+
+    // Kiểm tra giới hạn cấp độ
+    if (item.level >= 50) {
+      return res.status(400).json({ message: 'Thẻ đã đạt cấp độ tối đa (Lv.50)!' });
+    }
+
+    // Công thức tính tiền: Cấp hiện tại x 100 Vàng
+    const cost = item.level * 100;
+    
+    // Kiểm tra túi tiền
+    if (user.gold < cost) {
+      return res.status(400).json({ message: `Không đủ Vàng! Cần ${cost} Vàng.` });
+    }
+
+    // Trừ Vàng và thăng cấp
+    user.gold -= cost;
+    item.level += 1;
+
+    await user.save();
+
+    res.status(200).json({ 
+      message: 'Nâng cấp thành công!', 
+      newLevel: item.level, 
+      newGold: user.gold 
+    });
+  } catch (error) {
+    console.error('Lỗi khi nâng cấp:', error);
+    res.status(500).json({ message: 'Lỗi server khi nâng cấp!' });
+  }
+});
+
+// ==========================================
+// API LƯU KẾT QUẢ CHIẾN THẮNG
+// ==========================================
+app.post('/api/user/win-battle', async (req, res) => {
+  try {
+    const { userId, stageId } = req.body;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'Không tìm thấy user' });
+
+    let message = 'Chiến thắng!';
+    let rewardGold = 150; // Thắng ải nào cũng được 150 Vàng
+
+    // Nếu đây là ải mới nhất người chơi vừa vượt qua -> Cập nhật kỷ lục và thưởng đậm hơn
+    if (stageId > user.highestStageCleared) {
+      user.highestStageCleared = stageId;
+      rewardGold = 500; // Thưởng lần đầu qua ải
+      message = 'Vượt ải mới thành công!';
+    }
+
+    user.gold += rewardGold;
+    await user.save();
+
+    res.status(200).json({ 
+      message, 
+      highestStageCleared: user.highestStageCleared,
+      newGold: user.gold,
+      rewardGold
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi server khi lưu kết quả' });
+  }
+});

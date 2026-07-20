@@ -1,7 +1,9 @@
 <script setup>
+import { useRouter } from 'vue-router'
 const selectMode = (modeName) => {
   alert(`Đang khởi tạo ${modeName}... Chuẩn bị vào chiến! 🚀`)
 }
+const router = useRouter()
 </script>
 
 <template>
@@ -15,7 +17,7 @@ const selectMode = (modeName) => {
     <div class="modes-list">
       
       <!-- 1. Chế độ Test DPS -->
-      <div class="mode-card dps-mode" @click="selectMode('Phòng Tập DPS')">
+      <div class="mode-card dps-mode" @click="router.push('/test-dps')">
         <div class="mode-icon">🎯</div>
         <div class="mode-info">
           <h2>Test DPS</h2>

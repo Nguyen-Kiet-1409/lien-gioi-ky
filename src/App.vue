@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
-import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router' // Thêm useRouter để chuyển trang
+// Bổ sung thêm onUnmounted vào dòng import
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router' 
 
 const route = useRoute()
-const router = useRouter() // Khởi tạo router
+const router = useRouter() 
 
 // Biến lưu trữ thông tin người chơi
 const playerInfo = ref({
@@ -24,6 +25,14 @@ const loadPlayerData = () => {
 // Chạy hàm khi trang vừa load
 onMounted(() => {
   loadPlayerData()
+  
+  // 👉 GẮN ĐÀI RADIO: Lắng nghe sự kiện 'wallet-updated' từ CharacterView gửi sang
+  window.addEventListener('wallet-updated', loadPlayerData)
+})
+
+// 👉 TẮT ĐÀI: Gỡ bỏ lắng nghe khi component bị hủy để máy không bị lag
+onUnmounted(() => {
+  window.removeEventListener('wallet-updated', loadPlayerData)
 })
 
 // Theo dõi khi chuyển trang thì load lại dữ liệu

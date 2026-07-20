@@ -60,6 +60,63 @@ const viewCharacter = (card) => {
 const closeCharacter = () => {
   selectedCard.value = null
 }
+
+// Tính toán chỉ số thực tế dựa trên Level và Độ hiếm
+const calculateStat = (baseStat, level, rarity) => {
+  if (!baseStat) return 0;
+  
+  let growthRate = 0.05; // R: 5%
+  if (rarity === 'UR') growthRate = 0.15;      // UR: 15%
+  else if (rarity === 'SSR') growthRate = 0.10; // SSR: 10%
+  else if (rarity === 'SR') growthRate = 0.08;  // SR: 8%
+
+  // Công thức: Chỉ số gốc * (1 + (Level - 1) * Tỷ lệ tăng)
+  return Math.floor(baseStat * (1 + (level - 1) * growthRate));
+}
+
+// Xử lý khi bấm nút Nâng cấp
+const upgradeCard = async () => {
+  if (selectedCard.value.level >= 50) {
+    alert('Đã đạt cấp tối đa Lv.50!');
+    return;
+  }
+
+  const cost = selectedCard.value.level * 100;
+  const userData = JSON.parse(localStorage.getItem('currentUser'));
+
+  // Nếu bạn có lưu thông tin gold trong currentUser, có thể check trước ở đây
+  // Tuy nhiên ta cứ bắn API để Backend check là chuẩn nhất
+
+  try {
+    const res = await fetch('http://localhost:5000/api/user/upgrade-card', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: userData.id,
+        inventoryId: selectedCard.value._id // ID định danh của thẻ này trong túi đồ
+      })
+    });
+    
+    const data = await res.json();
+    
+    if (res.ok) {
+      // Cập nhật giao diện ngay lập tức
+      selectedCard.value.level = data.newLevel;
+      
+      // Cập nhật lại số tiền Vàng vào currentUser để dùng cho các màn hình khác
+      userData.gold = data.newGold;
+      localStorage.setItem('currentUser', JSON.stringify(userData));
+
+      // 👉 THÊM DÒNG NÀY: Phát một sự kiện ra toàn trang web báo hiệu tiền đã thay đổi
+      window.dispatchEvent(new CustomEvent('wallet-updated'));
+    } else {
+      alert(`❌ ${data.message}`);
+    }
+  } catch (error) {
+    alert('Lỗi kết nối tới máy chủ!');
+  }
+}
+
 </script>
 
 <template>
@@ -121,21 +178,42 @@ const closeCharacter = () => {
           </div>
         </div>
 
+        <!-- NÚT NÂNG CẤP -->
+        <div class="action-section" style="margin-bottom: 20px; text-align: center;">
+          <button 
+            @click="upgradeCard" 
+            :disabled="selectedCard.level >= 50"
+            class="upgrade-btn"
+            :class="{ 'maxed': selectedCard.level >= 50 }"
+          >
+            <span v-if="selectedCard.level < 50">
+              ⭐ Nâng Cấp (Cần {{ selectedCard.level * 100 }} 🪙)
+            </span>
+            <span v-else>MAX LEVEL 🏆</span>
+          </button>
+        </div>
+
         <!-- CHỈ SỐ CƠ BẢN -->
         <div class="stats-section">
           <div class="stat-box">
             <div class="stat-icon">❤️</div>
-            <div class="stat-value">{{ selectedCard.cardId?.stats?.hp || 0 }}</div>
+            <div class="stat-value">
+              {{ calculateStat(selectedCard.cardId?.stats?.hp, selectedCard.level, selectedCard.cardId?.rarity) }}
+            </div>
             <div class="stat-label">Máu (HP)</div>
           </div>
           <div class="stat-box">
             <div class="stat-icon">⚔️</div>
-            <div class="stat-value">{{ selectedCard.cardId?.stats?.atk || 0 }}</div>
+            <div class="stat-value">
+              {{ calculateStat(selectedCard.cardId?.stats?.atk, selectedCard.level, selectedCard.cardId?.rarity) }}
+            </div>
             <div class="stat-label">Tấn Công</div>
           </div>
           <div class="stat-box">
             <div class="stat-icon">⚡</div>
-            <div class="stat-value">{{ selectedCard.cardId?.stats?.spd || 0 }}</div>
+            <div class="stat-value">
+              {{ calculateStat(selectedCard.cardId?.stats?.spd, selectedCard.level, selectedCard.cardId?.rarity) }}
+            </div>
             <div class="stat-label">Tốc Độ</div>
           </div>
         </div>
@@ -284,4 +362,34 @@ h3 { margin: 0 0 10px 0; font-size: 16px; color: #fff; border-bottom: 1px solid 
 .active .s-type { background: #2980b9; }
 .ultimate .s-type { background: #c0392b; }
 .s-info p { margin: 0; font-size: 13px; color: #aaa; line-height: 1.4; }
+
+/* Nút Nâng Cấp */
+.upgrade-btn {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #27ae60, #2ecc71);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(39, 174, 96, 0.4);
+  transition: transform 0.2s, background 0.3s;
+}
+
+.upgrade-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, #2ecc71, #27ae60);
+}
+
+.upgrade-btn:active:not(:disabled) {
+  transform: translateY(2px);
+}
+
+.upgrade-btn.maxed {
+  background: #7f8c8d;
+  cursor: not-allowed;
+  box-shadow: none;
+}
 </style>

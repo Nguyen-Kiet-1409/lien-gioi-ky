@@ -11,6 +11,9 @@ const userSchema = new mongoose.Schema({
   gold: { type: Number, default: 1500 },
   diamonds: { type: Number, default: 1000 }, // Tặng 1000 KC làm vốn khởi nghiệp!
   maxCapacity: { type: Number, default: 50 },
+
+  //Kỷ lục ải cao nhất đã vượt qua
+  highestStageCleared: { type: Number, default: 0 },
   
   // Kho nhân vật (Lưu danh sách thẻ bài user đang sở hữu)
   inventory: [

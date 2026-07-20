@@ -14,7 +14,18 @@ const router = createRouter({
     { path: '/phieu-luu', name: 'adventure', component: AdventureView },
     { path: '/che-do', name: 'modes', component: ModesView },
     { path: '/nhan-vat', name: 'characters', component: CharactersView },
-    { path: '/admin', name: 'admin', component: AdminView }
+    { path: '/admin', name: 'admin', component: AdminView },
+    // Thêm vào mảng routes của bạn:
+    {
+      path: '/test-dps',
+      name: 'test-dps',
+      component: () => import('../views/TestDPSView.vue')
+    },
+    {
+      path: '/battle',
+      name: 'battle',
+      component: () => import('../views/BattleView.vue')
+    }
   ]
 })
 
