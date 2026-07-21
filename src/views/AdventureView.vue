@@ -4,21 +4,16 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 
-const chapterName = ref("Chương 1: Khu Rừng Khởi Nguyên")
+// Dữ liệu động tải từ Server
+const chapterName = ref("Đang tải dữ liệu...")
+const stages = ref([])
+const currentChapterData = ref(null)
 
-// 1. Dữ liệu các ải
-const stages = ref([
-  { id: 1, name: 'Cửa Rừng', status: 'cleared', stars: 3, cost: 5, missions: ['Hoàn thành ải', 'Không thẻ bài chết', 'Thắng trong 5 hiệp'], x: 15, y: 20 },
-  { id: 2, name: 'Đường Mòn', status: 'cleared', stars: 2, cost: 5, missions: ['Hoàn thành ải', 'Máu trên 50%', 'Không dùng thẻ phép'], x: 35, y: 15 },
-  { id: 3, name: 'Suối Tiên', status: 'cleared', stars: 3, cost: 5, missions: ['Hoàn thành ải', 'Tiêu diệt 3 quái', 'Thắng trong 4 hiệp'], x: 55, y: 25 },
-  { id: 4, name: 'Bẫy Rập', status: 'current', stars: 0, cost: 5, missions: ['Hoàn thành ải', 'Chỉ dùng thẻ Nước', 'Bảo vệ NPC'], x: 75, y: 15 },
-  { id: 5, name: 'Trại Goblin', status: 'locked', stars: 0, cost: 5, missions: ['Hoàn thành ải', 'Không ai ngã xuống', 'Thắng trong 3 hiệp'], x: 85, y: 40 },
-  { id: 6, name: 'Hang Động', status: 'locked', stars: 0, cost: 5, missions: ['Hoàn thành ải', 'Dùng kỹ năng 5 lần', 'Giữ HP > 80%'], x: 70, y: 60 },
-  { id: 7, name: 'Vách Đá', status: 'locked', stars: 0, cost: 5, missions: ['Hoàn thành ải', 'Hạ gục Boss', 'Không thẻ bài chết'], x: 85, y: 80 },
-  { id: 8, name: 'Đầm Lầy', status: 'locked', stars: 0, cost: 5, missions: ['Hoàn thành ải', 'Không bị dính Độc', 'Thắng trong 5 hiệp'], x: 55, y: 75 },
-  { id: 9, name: 'Tế Đàn', status: 'locked', stars: 0, cost: 5, missions: ['Hoàn thành ải', 'Dùng thẻ UR', 'Thắng ngay hiệp 1'], x: 35, y: 85 },
-  { id: 10, name: 'Boss Rừng', status: 'locked', stars: 0, cost: 10, missions: ['Hoàn thành ải', 'Đánh bại Boss Rừng', 'Tất cả thẻ bài còn sống'], x: 15, y: 70 },
-])
+// Tọa độ cố định của 10 chòm sao trên bản đồ (Giữ nguyên form dáng thiên vân)
+const mapCoordinates = [
+  { x: 15, y: 20 }, { x: 35, y: 15 }, { x: 55, y: 25 }, { x: 75, y: 15 }, { x: 85, y: 40 },
+  { x: 70, y: 60 }, { x: 85, y: 80 }, { x: 55, y: 75 }, { x: 35, y: 85 }, { x: 15, y: 70 }
+]
 
 const totalStars = computed(() => {
   return stages.value.reduce((sum, stage) => sum + stage.stars, 0)
@@ -33,8 +28,8 @@ const selectedStage = ref(null)
 // --- BIẾN CHO TÍNH NĂNG CHỌN ĐỘI HÌNH ---
 const inventory = ref([])
 const isSelectingTeam = ref(false)
-const selectedTeam = ref([]) // Mảng chứa tối đa 3 thẻ
-const targetStageForBattle = ref(null) // Lưu lại ải đang định đánh
+const selectedTeam = ref([]) 
+const targetStageForBattle = ref(null) 
 
 const getCardColor = (rarity) => {
   switch(rarity) {
@@ -45,27 +40,57 @@ const getCardColor = (rarity) => {
   }
 }
 
-// Tải túi đồ và Cập nhật trạng thái bản đồ khi vào trang Phiêu Lưu
+// Tải dữ liệu khi vào trang Phiêu Lưu
 onMounted(async () => {
   const userData = JSON.parse(localStorage.getItem('currentUser')) || {}
-  
-  // 👉 1. XỬ LÝ MỞ KHÓA BẢN ĐỒ
   const highestCleared = userData.highestStageCleared || 0
-  
-  stages.value.forEach(stage => {
-    if (stage.id <= highestCleared) {
-      stage.status = 'cleared'
-      stage.stars = 3 // Giả định qua rồi là được 3 sao
-    } else if (stage.id === highestCleared + 1) {
-      stage.status = 'current' // Mở khóa ải tiếp theo
-      stage.stars = 0
-    } else {
-      stage.status = 'locked'
-      stage.stars = 0
-    }
-  })
 
-  // 👉 2. TẢI TÚI ĐỒ (Giữ nguyên như cũ)
+  // 👉 1. TẢI DỮ LIỆU CHƯƠNG & ẢI TỪ DATABASE
+  try {
+    const chapterRes = await fetch('http://localhost:5000/api/chapters')
+    if (chapterRes.ok) {
+      const chapters = await chapterRes.json()
+      
+      if (chapters.length > 0) {
+        // Tạm thời lấy Chương đầu tiên (Sau này có thể làm nút Next Chương)
+        currentChapterData.value = chapters[0]
+        chapterName.value = `Chương ${currentChapterData.value.chapterNumber}: ${currentChapterData.value.title}`
+        
+        // Trộn dữ liệu Ải từ DB vào Tọa độ Map
+        stages.value = currentChapterData.value.stages.map((stage, index) => {
+          let status = 'locked'
+          let stars = 0
+
+          // Xử lý mở khóa dựa trên kỷ lục của người chơi
+          if (stage.stageId <= highestCleared) {
+            status = 'cleared'
+            stars = 3 
+          } else if (stage.stageId === highestCleared + 1) {
+            status = 'current'
+          }
+
+          return {
+            id: stage.stageId,
+            name: stage.name,
+            cost: stage.cost,
+            status: status,
+            stars: stars,
+            missions: ['Hoàn thành ải', 'Không thẻ bài chết', 'Thắng trong 5 hiệp'],
+            x: mapCoordinates[index].x,
+            y: mapCoordinates[index].y,
+            // Lưu kèm danh sách quái & boss từ DB để truyền sang trận đánh
+            monsters: stage.monsters, 
+            boss: index === 9 ? currentChapterData.value.bossId : null 
+          }
+        })
+      }
+    }
+  } catch (error) {
+    console.error('Lỗi tải dữ liệu Chương:', error)
+    chapterName.value = "Lỗi tải dữ liệu!"
+  }
+
+  // 👉 2. TẢI TÚI ĐỒ NHÂN VẬT CỦA NGƯỜI CHƠI
   if (userData && userData.id) {
     try {
       const res = await fetch(`http://localhost:5000/api/user/${userData.id}/inventory`)
@@ -90,20 +115,15 @@ const closeStage = () => {
 // Khi bấm "Vào Chiến Lập Tức" -> Chuyển sang màn hình chọn tướng
 const enterBattle = () => {
   targetStageForBattle.value = selectedStage.value
-  selectedStage.value = null // Đóng popup ải
-  isSelectingTeam.value = true // Mở popup chọn tướng
+  selectedStage.value = null 
+  isSelectingTeam.value = true 
 }
 
-// Logic chọn / bỏ chọn thẻ bài vào đội hình
 const toggleCardSelection = (item) => {
-  // Kiểm tra xem thẻ này đã có trong đội hình chưa
   const index = selectedTeam.value.findIndex(card => card._id === item._id)
-  
   if (index > -1) {
-    // Nếu có rồi thì rút ra khỏi đội
     selectedTeam.value.splice(index, 1)
   } else {
-    // Nếu chưa có, kiểm tra giới hạn 3 người
     if (selectedTeam.value.length < 3) {
       selectedTeam.value.push(item)
     } else {
@@ -119,13 +139,12 @@ const confirmStartBattle = () => {
     return
   }
   
-  // 1. Lưu tạm đội hình và ải vào LocalStorage để trang Battle đọc
+  // 👉 Nâng cấp: Đóng gói toàn bộ thông tin Quái & Boss gửi sang BattleView
   localStorage.setItem('battleData', JSON.stringify({
     team: selectedTeam.value,
     stage: targetStageForBattle.value
   }))
 
-  // 2. Chuyển sang trang chiến đấu
   router.push('/battle')
 }
 

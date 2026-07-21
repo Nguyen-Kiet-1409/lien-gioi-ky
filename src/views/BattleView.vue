@@ -29,6 +29,7 @@ const getActualStat = (baseStat, level, rarity, statType) => {
 }
 
 // Hàm khởi tạo/Reset sàn đấu
+// Hàm khởi tạo/Reset sàn đấu
 const initBattle = () => {
   const data = JSON.parse(localStorage.getItem('battleData'))
   if (!data || !data.team) {
@@ -60,21 +61,68 @@ const initBattle = () => {
     }
   })
 
-  // Khởi tạo phe Địch
-  const enemyLevel = stageInfo.value.id * 2
-  enemies.value = [1, 2, 3].map(i => ({
-    uid: `enemy_${i}`,
-    isAlly: false,
-    name: i === 2 ? 'Goblin Thủ Lĩnh' : 'Goblin Tay Sai',
-    image: null,
-    emoji: i === 2 ? '👹' : '👺',
-    maxHp: 2000 + (enemyLevel * 200),
-    hp: 2000 + (enemyLevel * 200),
-    atk: 150 + (enemyLevel * 20),
-    spd: 40 + (enemyLevel * 2) + (Math.random() * 10),
-    isAttacking: false,
-    isHit: false
-  }))
+  // ==========================================
+  // KHỞI TẠO PHE ĐỊCH (TỪ DATABASE TRUYỀN SANG)
+  // ==========================================
+  enemies.value = []
+
+  // 1. Nạp Quái thường (Nếu Admin có cấu hình)
+  if (stageInfo.value.monsters && stageInfo.value.monsters.length > 0) {
+    stageInfo.value.monsters.forEach((monster, index) => {
+      enemies.value.push({
+        uid: `enemy_mob_${index}`,
+        isAlly: false,
+        name: monster.name,
+        image: null,
+        emoji: monster.emoji || '👺',
+        maxHp: monster.hp,
+        hp: monster.hp,
+        atk: monster.atk,
+        spd: monster.spd + Math.floor(Math.random() * 5), // Lệch tốc độ 1 chút
+        isAttacking: false,
+        isHit: false,
+        isBoss: false
+      })
+    })
+  }
+
+  // 2. Nạp Boss (Thường ở ải 10)
+  if (stageInfo.value.boss) {
+    const boss = stageInfo.value.boss
+    enemies.value.push({
+      uid: `enemy_boss`,
+      isAlly: false,
+      name: boss.name,
+      image: null,
+      emoji: boss.emoji || '👹',
+      maxHp: boss.hp,
+      hp: boss.hp,
+      atk: boss.atk,
+      spd: boss.spd,
+      isAttacking: false,
+      isHit: false,
+      isBoss: true
+    })
+  }
+
+  // 3. Dự phòng (Nếu Admin quên xếp quái, tạo 1 con Slime bù vào)
+  if (enemies.value.length === 0) {
+    const enemyLevel = stageInfo.value.id * 2
+    enemies.value.push({
+      uid: `enemy_default`,
+      isAlly: false,
+      name: 'Slime Lạc Đường',
+      image: null,
+      emoji: '💧',
+      maxHp: 1000 + (enemyLevel * 100),
+      hp: 1000 + (enemyLevel * 100),
+      atk: 50 + (enemyLevel * 10),
+      spd: 30,
+      isAttacking: false,
+      isHit: false,
+      isBoss: false
+    })
+  }
 
   combatLog.value = []
   battleStatus.value = 'waiting'
@@ -198,33 +246,45 @@ const exitBattle = () => {
   router.push('/phieu-luu')
 }
 
-// Danh sách tên 10 Ải của Chương 1 để hệ thống biết đường gọi tên
-const chapter1Stages = [
-  'Cửa Rừng', 'Đường Mòn', 'Suối Tiên', 'Bẫy Rập', 'Trại Goblin',
-  'Hang Động', 'Vách Đá', 'Đầm Lầy', 'Tế Đàn', 'Boss Rừng'
-]
-
-// Hàm chuyển sang màn tiếp theo
-const nextStage = () => {
+// Hàm chuyển sang màn tiếp theo (Đã kết nối Database)
+const nextStage = async () => {
   const nextId = stageInfo.value.id + 1
 
   // Kiểm tra nếu đã đánh xong ải 10 (Max)
   if (nextId > 10) {
-    alert('🎉 Chúc mừng! Bạn đã phá đảo toàn bộ Chương 1!')
+    alert('🎉 Chúc mừng! Bạn đã phá đảo toàn bộ Chương này!')
     exitBattle()
     return
   }
 
-  // Cập nhật lại thông tin ải mới vào localStorage
-  const data = JSON.parse(localStorage.getItem('battleData'))
-  data.stage = {
-    id: nextId,
-    name: chapter1Stages[nextId - 1]
-  }
-  localStorage.setItem('battleData', JSON.stringify(data))
+  try {
+    // 1. Gọi DB bốc dữ liệu Chương về
+    const res = await fetch('http://localhost:5000/api/chapters')
+    const chapters = await res.json()
+    const currentChapter = chapters[0] // (Tạm mặc định là Chương đầu tiên)
+    
+    // 2. Tìm đúng ải tiếp theo trong DB
+    const nextStageData = currentChapter.stages.find(s => s.stageId === nextId)
 
-  // Gọi hàm khởi tạo lại trận đấu (quái mới, máu mới, log mới)
-  initBattle()
+    if (nextStageData) {
+      // 3. Đóng gói ải mới VỚI ĐẦY ĐỦ QUÁI VẬT lưu vào bộ nhớ tạm
+      const data = JSON.parse(localStorage.getItem('battleData'))
+      data.stage = {
+        id: nextStageData.stageId,
+        name: nextStageData.name,
+        cost: nextStageData.cost,
+        monsters: nextStageData.monsters, // Truyền bầy đệ tử vào
+        boss: nextId === 10 ? currentChapter.bossId : null // Nếu là ải 10 thì gọi Boss ra
+      }
+      localStorage.setItem('battleData', JSON.stringify(data))
+
+      // 4. Khởi tạo lại trận đấu với bãi quái mới
+      initBattle()
+    }
+  } catch (error) {
+    console.error('Lỗi khi tải ải tiếp theo:', error)
+    alert('Không thể tải dữ liệu màn kế!')
+  }
 }
 
 </script>
@@ -286,7 +346,10 @@ const nextStage = () => {
             <div class="hp-bar" :style="{ width: (char.hp / char.maxHp * 100) + '%', background: '#e74c3c' }"></div>
           </div>
           <div class="fighter-info">
-            <div class="name">{{ char.name }}</div>
+            <!-- Tên quái vật: Nếu là Boss thì hiển thị nổi bật -->
+            <div class="name" :style="char.isBoss ? 'color: #e74c3c; font-size: 14px;' : ''">
+              {{ char.isBoss ? '👑' : '' }} {{ char.name }}
+            </div>
             <div class="hp-text">{{ char.hp }} / {{ char.maxHp }}</div>
           </div>
         </div>

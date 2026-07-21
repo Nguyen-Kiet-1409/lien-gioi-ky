@@ -7,6 +7,8 @@ const Card = require('./models/Card');
 const bcrypt = require('bcryptjs');
 const User = require('./models/User');
 const Banner = require('./models/Banner');
+const Monster = require('./models/Monster');
+const Chapter = require('./models/Chapter');
 
 const app = express();
 
@@ -331,5 +333,104 @@ app.post('/api/user/win-battle', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Lỗi server khi lưu kết quả' });
+  }
+});
+
+// ==========================================
+// API QUẢN LÝ QUÁI VẬT (ADMIN)
+// ==========================================
+
+// 1. Lấy danh sách toàn bộ quái vật
+app.get('/api/monsters', async (req, res) => {
+  try {
+    const monsters = await Monster.find().sort({ isBoss: 1, createdAt: -1 });
+    res.status(200).json(monsters);
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi khi lấy danh sách quái vật' });
+  }
+});
+
+// 2. Thêm quái vật mới
+app.post('/api/monsters', async (req, res) => {
+  try {
+    const newMonster = new Monster(req.body);
+    await newMonster.save();
+    res.status(201).json({ message: 'Đã tạo quái vật thành công!', monster: newMonster });
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi khi tạo quái vật', error });
+  }
+});
+
+// 3. Cập nhật thông tin quái vật
+app.put('/api/monsters/:id', async (req, res) => {
+  try {
+    const updatedMonster = await Monster.findByIdAndUpdate(
+      req.params.id, 
+      req.body, 
+      { new: true } // Trả về data mới sau khi update
+    );
+    if (!updatedMonster) return res.status(404).json({ message: 'Không tìm thấy quái vật!' });
+    res.status(200).json({ message: 'Cập nhật thành công!', monster: updatedMonster });
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi khi cập nhật quái vật' });
+  }
+});
+
+// 4. Xóa quái vật
+app.delete('/api/monsters/:id', async (req, res) => {
+  try {
+    const deletedMonster = await Monster.findByIdAndDelete(req.params.id);
+    if (!deletedMonster) return res.status(404).json({ message: 'Không tìm thấy quái vật!' });
+    res.status(200).json({ message: 'Đã xóa quái vật khỏi hệ thống!' });
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi khi xóa quái vật' });
+  }
+});
+
+// ==========================================
+// API QUẢN LÝ CHƯƠNG & ẢI (ADMIN)
+// ==========================================
+
+// 1. Lấy danh sách toàn bộ Chương (Có populate thông tin Boss)
+app.get('/api/chapters', async (req, res) => {
+  try {
+    const chapters = await Chapter.find()
+    .populate('bossId')
+    .populate('stages.monsters') // Tự động móc nối data quái cho từng ải
+    .sort({ chapterNumber: 1 });
+    res.status(200).json(chapters);
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi khi lấy danh sách chương' });
+  }
+});
+
+// 2. Thêm Chương mới
+app.post('/api/chapters', async (req, res) => {
+  try {
+    const newChapter = new Chapter(req.body);
+    await newChapter.save();
+    res.status(201).json({ message: 'Đã tạo Chương mới thành công!' });
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi khi tạo Chương (Có thể trùng Số Chương)' });
+  }
+});
+
+// 3. Sửa Chương
+app.put('/api/chapters/:id', async (req, res) => {
+  try {
+    await Chapter.findByIdAndUpdate(req.params.id, req.body);
+    res.status(200).json({ message: 'Cập nhật Chương thành công!' });
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi khi cập nhật Chương' });
+  }
+});
+
+// 4. Xóa Chương
+app.delete('/api/chapters/:id', async (req, res) => {
+  try {
+    await Chapter.findByIdAndDelete(req.params.id);
+    res.status(200).json({ message: 'Đã xóa Chương khỏi hệ thống!' });
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi khi xóa Chương' });
   }
 });
