@@ -10,7 +10,7 @@ const allies = ref([])
 const enemies = ref([])
 const combatLog = ref([])
 const isAutoPlaying = ref(false)
-const battleStatus = ref('waiting') // waiting, playing, victory, defeat
+const battleStatus = ref('waiting')
 
 // BIẾN CHO POPUP KẾT QUẢ
 const showResultPopup = ref(false)
@@ -18,6 +18,17 @@ const earnedStars = ref(0)
 const earnedGold = ref(0)
 
 let battleInterval = null
+
+// 👉 HÀM LẤY EMOJI TRẠNG THÁI (Phải để ngoài cùng thế này thì Template mới gọi được)
+const getStatusEmoji = (type) => {
+  switch(type) {
+    case 'stun': return '💫';
+    case 'poison': return '☠️';
+    case 'buff_atk': return '💪';
+    case 'buff_spd': return '⚡';
+    default: return '❓';
+  }
+}
 
 // Hàm tính toán chỉ số thực tế
 const getActualStat = (baseStat, level, rarity, statType) => {
@@ -29,7 +40,6 @@ const getActualStat = (baseStat, level, rarity, statType) => {
 }
 
 // Hàm khởi tạo/Reset sàn đấu
-// Hàm khởi tạo/Reset sàn đấu
 const initBattle = () => {
   const data = JSON.parse(localStorage.getItem('battleData'))
   if (!data || !data.team) {
@@ -40,7 +50,6 @@ const initBattle = () => {
   
   stageInfo.value = data.stage
   
-  // Khởi tạo phe Ta
   allies.value = data.team.map((item, index) => {
     const card = item.cardId
     const hp = getActualStat(card.stats?.hp || 1000, item.level, card.rarity, 'hp')
@@ -57,16 +66,13 @@ const initBattle = () => {
       spd: getActualStat(card.stats?.spd || 50, item.level, card.rarity, 'spd'),
       skills: card.skills || {},
       isAttacking: false,
-      isHit: false
+      isHit: false,
+      statuses: [] // Chứa object: { type: 'stun', turns: 1 }
     }
   })
 
-  // ==========================================
-  // KHỞI TẠO PHE ĐỊCH (TỪ DATABASE TRUYỀN SANG)
-  // ==========================================
   enemies.value = []
 
-  // 1. Nạp Quái thường (Nếu Admin có cấu hình)
   if (stageInfo.value.monsters && stageInfo.value.monsters.length > 0) {
     stageInfo.value.monsters.forEach((monster, index) => {
       enemies.value.push({
@@ -78,15 +84,15 @@ const initBattle = () => {
         maxHp: monster.hp,
         hp: monster.hp,
         atk: monster.atk,
-        spd: monster.spd + Math.floor(Math.random() * 5), // Lệch tốc độ 1 chút
+        spd: monster.spd + Math.floor(Math.random() * 5),
         isAttacking: false,
         isHit: false,
-        isBoss: false
+        isBoss: false,
+        statuses: []
       })
     })
   }
 
-  // 2. Nạp Boss (Thường ở ải 10)
   if (stageInfo.value.boss) {
     const boss = stageInfo.value.boss
     enemies.value.push({
@@ -101,11 +107,11 @@ const initBattle = () => {
       spd: boss.spd,
       isAttacking: false,
       isHit: false,
-      isBoss: true
+      isBoss: true,
+      statuses: []
     })
   }
 
-  // 3. Dự phòng (Nếu Admin quên xếp quái, tạo 1 con Slime bù vào)
   if (enemies.value.length === 0) {
     const enemyLevel = stageInfo.value.id * 2
     enemies.value.push({
@@ -120,7 +126,8 @@ const initBattle = () => {
       spd: 30,
       isAttacking: false,
       isHit: false,
-      isBoss: false
+      isBoss: false,
+      statuses: []
     })
   }
 
@@ -143,32 +150,27 @@ const addLog = (msg) => {
   if (combatLog.value.length > 30) combatLog.value.pop()
 }
 
-// Logic Trận Đánh Tự Động
 const toggleAutoBattle = () => {
   if (battleStatus.value === 'victory' || battleStatus.value === 'defeat') return
-  
   isAutoPlaying.value = !isAutoPlaying.value
   battleStatus.value = isAutoPlaying.value ? 'playing' : 'waiting'
-
   if (isAutoPlaying.value) runBattleLoop()
   else clearTimeout(battleInterval)
 }
 
+// 👉 HÀM RUNBATTLELOOP ĐÃ FIX LOGIC SỐ LƯỢT CHO ÁP DỤNG TRẠNG THÁI
 const runBattleLoop = async () => {
   if (!isAutoPlaying.value) return
 
   const aliveAllies = allies.value.filter(a => a.hp > 0)
   const aliveEnemies = enemies.value.filter(e => e.hp > 0)
 
-  // XỬ LÝ KẾT THÚC TRẬN ĐẤU
   if (aliveEnemies.length === 0 || aliveAllies.length === 0) {
     isAutoPlaying.value = false
     
     if (aliveEnemies.length === 0) {
       battleStatus.value = 'victory'
       addLog('🏆 CHIẾN THẮNG! Toàn bộ kẻ địch đã bị tiêu diệt.')
-      
-      // Tính số sao (Cứ sống 1 người = 1 sao)
       earnedStars.value = aliveAllies.length
       
       const userData = JSON.parse(localStorage.getItem('currentUser'))
@@ -195,46 +197,129 @@ const runBattleLoop = async () => {
       addLog('☠️ THẤT BẠI! Toàn bộ đội hình đã ngã xuống.')
     }
 
-    // Hiển thị popup sau 1 giây cho kịch tính
     setTimeout(() => { showResultPopup.value = true }, 1000)
     return
   }
 
-  // LOGIC ĐÁNH NHƯ CŨ
   const allAlive = [...aliveAllies, ...aliveEnemies].sort((a, b) => b.spd - a.spd)
   const actor = allAlive[0]
-  const targetTeam = actor.isAlly ? aliveEnemies : aliveAllies
-  const target = targetTeam[Math.floor(Math.random() * targetTeam.length)]
+  const enemyTeam = actor.isAlly ? aliveEnemies : aliveAllies
+  const allyTeam = actor.isAlly ? aliveAllies : aliveEnemies
 
-  let skillName = 'Đánh thường'
-  let multiplier = 1.0
-  const roll = Math.random()
+  // 1. XỬ LÝ TRẠNG THÁI ĐẦU HIỆP (Choáng, Độc...)
+  let canMove = true
+  let activeStatuses = []
 
-  if (actor.isAlly) {
-    if (roll <= 0.10) { skillName = actor.skills.ultimate?.name || 'Tuyệt kỹ'; multiplier = 2.5 } 
-    else if (roll <= 0.40) { skillName = actor.skills.active?.name || 'Kỹ năng'; multiplier = 1.5 }
-  } else {
-    skillName = roll < 0.2 ? 'Cắn xé' : 'Đập mạnh'
-    multiplier = roll < 0.2 ? 1.5 : 1.0
+  actor.statuses.forEach(status => {
+    if (status.type === 'stun') {
+      addLog(`💫 [${actor.name}] đang bị choáng, mất lượt!`)
+      canMove = false
+    } 
+    else if (status.type === 'poison') {
+      const poisonDmg = Math.floor(actor.maxHp * 0.05) 
+      actor.hp = Math.max(0, actor.hp - poisonDmg)
+      addLog(`☠️ [${actor.name}] chịu ${poisonDmg} ST từ Độc (Còn ${status.turns} lượt)`)
+    }
+    
+    // Giảm lượt
+    status.turns -= 1
+    if (status.turns > 0) activeStatuses.push(status)
+  })
+  
+  actor.statuses = activeStatuses
+
+  // Nếu trúng độc chết trước khi đánh
+  if (actor.hp === 0) {
+    actor.spd = 0
+    addLog(`💀 [${actor.name}] đã gục ngã vì trúng độc!`)
+    return setTimeout(() => { if (isAutoPlaying.value) runBattleLoop() }, 1000)
   }
 
-  const variance = (Math.random() * 0.2) - 0.1
-  const finalDamage = Math.floor(actor.atk * multiplier * (1 + variance))
+  if (canMove) {
+    // 2. CHỌN KỸ NĂNG
+    let currentSkill = { name: 'Đánh thường', effectType: 'damage', effectValue: 100, target: 'enemy_single' } 
+    
+    if (actor.isAlly && actor.skills) {
+      const roll = Math.random()
+      if (roll <= 0.15 && actor.skills.ultimate?.name) currentSkill = actor.skills.ultimate
+      else if (roll <= 0.35 && actor.skills.active?.name) currentSkill = actor.skills.active
+      else if (actor.skills.normal?.name) currentSkill = actor.skills.normal
+    } else {
+      const roll = Math.random()
+      currentSkill.name = roll < 0.2 ? 'Đòn Hiểm' : 'Đánh Thường'
+      currentSkill.effectValue = roll < 0.2 ? 150 : 100
+    }
 
-  actor.isAttacking = true
-  setTimeout(() => {
-    target.isHit = true
-    target.hp = Math.max(0, target.hp - finalDamage)
-    addLog(`[${actor.name}] dùng ${skillName} gây ${finalDamage} ST lên [${target.name}]`)
-    if (target.hp === 0) addLog(`💀 [${target.name}] đã bị hạ gục!`)
-  }, 300)
+    // 3. CHỌN MỤC TIÊU
+    let targets = []
+    switch (currentSkill.target) {
+      case 'enemy_single': targets = [enemyTeam[Math.floor(Math.random() * enemyTeam.length)]]; break;
+      case 'enemy_all': targets = [...enemyTeam]; break;
+      case 'ally_single': targets = [[...allyTeam].sort((a, b) => (a.hp/a.maxHp) - (b.hp/b.maxHp))[0]]; break;
+      case 'ally_all': targets = [...allyTeam]; break;
+      case 'self': targets = [actor]; break;
+    }
 
+    actor.isAttacking = true
+    addLog(`🔥 [${actor.name}] tung chiêu [${currentSkill.name}]!`)
+
+    // 4. THỰC THI HIỆU ỨNG (Push object {type, turns} thay vì chuỗi string)
+    setTimeout(() => {
+      targets.forEach(target => {
+        target.isHit = true
+        
+        let currentAtk = actor.atk
+        if (actor.statuses.some(s => s.type === 'buff_atk')) currentAtk = Math.floor(actor.atk * 1.5) 
+
+        let effectPower = Math.floor(currentAtk * (currentSkill.effectValue / 100))
+
+        switch (currentSkill.effectType) {
+          case 'damage':
+            const variance = (Math.random() * 0.2) - 0.1 
+            const finalDmg = Math.floor(effectPower * (1 + variance))
+            target.hp = Math.max(0, target.hp - finalDmg)
+            addLog(`⚔️ Lượng ${finalDmg} sát thương đâm trúng [${target.name}]`)
+            break
+          
+          case 'heal':
+            target.hp = Math.min(target.maxHp, target.hp + effectPower)
+            addLog(`💖 [${target.name}] được hồi ${effectPower} HP`)
+            break
+            
+          case 'stun':
+            const eStun = target.statuses.find(s => s.type === 'stun')
+            if (eStun) eStun.turns = 1; else target.statuses.push({ type: 'stun', turns: 1 })
+            addLog(`💫 [${target.name}] bị CHOÁNG (1 lượt)!`)
+            break
+
+          case 'poison':
+            const ePoison = target.statuses.find(s => s.type === 'poison')
+            if (ePoison) ePoison.turns = 3; else target.statuses.push({ type: 'poison', turns: 3 })
+            addLog(`☠️ [${target.name}] bị TRÚNG ĐỘC (3 lượt)!`)
+            break
+            
+          case 'buff_atk':
+            const eBuff = target.statuses.find(s => s.type === 'buff_atk')
+            if (eBuff) eBuff.turns = 2; else target.statuses.push({ type: 'buff_atk', turns: 2 })
+            addLog(`💪 [${target.name}] được TĂNG ATK (2 lượt)!`)
+            break
+        }
+
+        if (target.hp === 0) addLog(`💀 [${target.name}] đã ngã xuống!`)
+      })
+    }, 300)
+  }
+
+  // 5. KẾT THÚC LƯỢT
   battleInterval = setTimeout(() => {
     actor.isAttacking = false
-    target.isHit = false
-    
     allAlive.forEach(char => {
-      if (char.uid !== actor.uid) char.spd += 20
+      char.isHit = false
+      if (char.uid !== actor.uid) {
+        let speedBoost = 20
+        if (char.statuses.some(s => s.type === 'buff_spd')) speedBoost = 30
+        char.spd += speedBoost 
+      }
       else char.spd = char.spd / 2
     })
     if (isAutoPlaying.value) runBattleLoop()
@@ -246,11 +331,9 @@ const exitBattle = () => {
   router.push('/phieu-luu')
 }
 
-// Hàm chuyển sang màn tiếp theo (Đã kết nối Database)
 const nextStage = async () => {
   const nextId = stageInfo.value.id + 1
 
-  // Kiểm tra nếu đã đánh xong ải 10 (Max)
   if (nextId > 10) {
     alert('🎉 Chúc mừng! Bạn đã phá đảo toàn bộ Chương này!')
     exitBattle()
@@ -258,27 +341,23 @@ const nextStage = async () => {
   }
 
   try {
-    // 1. Gọi DB bốc dữ liệu Chương về
     const res = await fetch('http://localhost:5000/api/chapters')
     const chapters = await res.json()
-    const currentChapter = chapters[0] // (Tạm mặc định là Chương đầu tiên)
+    const currentChapter = chapters[0] 
     
-    // 2. Tìm đúng ải tiếp theo trong DB
     const nextStageData = currentChapter.stages.find(s => s.stageId === nextId)
 
     if (nextStageData) {
-      // 3. Đóng gói ải mới VỚI ĐẦY ĐỦ QUÁI VẬT lưu vào bộ nhớ tạm
       const data = JSON.parse(localStorage.getItem('battleData'))
       data.stage = {
         id: nextStageData.stageId,
         name: nextStageData.name,
         cost: nextStageData.cost,
-        monsters: nextStageData.monsters, // Truyền bầy đệ tử vào
-        boss: nextId === 10 ? currentChapter.bossId : null // Nếu là ải 10 thì gọi Boss ra
+        monsters: nextStageData.monsters,
+        boss: nextId === 10 ? currentChapter.bossId : null 
       }
       localStorage.setItem('battleData', JSON.stringify(data))
 
-      // 4. Khởi tạo lại trận đấu với bãi quái mới
       initBattle()
     }
   } catch (error) {
@@ -286,7 +365,6 @@ const nextStage = async () => {
     alert('Không thể tải dữ liệu màn kế!')
   }
 }
-
 </script>
 
 <template>
@@ -310,6 +388,17 @@ const nextStage = async () => {
           :class="{ 'dead': char.hp <= 0, 'attacking': char.isAttacking, 'hit': char.isHit }"
         >
           <img v-if="char.image" :src="char.image" class="avatar">
+          <div class="status-effects-container" v-if="char.statuses && char.statuses.length > 0">
+            <div 
+              v-for="(st, i) in char.statuses" :key="i" 
+              class="status-icon" 
+              :class="st.type" 
+              :title="st.type"
+            >
+              {{ getStatusEmoji(st.type) }}
+              <span class="status-turns">{{ st.turns }}</span>
+            </div>
+          </div>
           <div class="hp-bar-container">
             <div class="hp-bar" :style="{ width: (char.hp / char.maxHp * 100) + '%', background: '#27ae60' }"></div>
           </div>
@@ -342,6 +431,17 @@ const nextStage = async () => {
           :class="{ 'dead': char.hp <= 0, 'attacking-enemy': char.isAttacking, 'hit': char.isHit }"
         >
           <div class="monster-emoji">{{ char.emoji }}</div>
+          <div class="status-effects-container" v-if="char.statuses && char.statuses.length > 0">
+            <div 
+              v-for="(st, i) in char.statuses" :key="i" 
+              class="status-icon" 
+              :class="st.type" 
+              :title="st.type"
+            >
+              {{ getStatusEmoji(st.type) }}
+              <span class="status-turns">{{ st.turns }}</span>
+            </div>
+          </div>
           <div class="hp-bar-container">
             <div class="hp-bar" :style="{ width: (char.hp / char.maxHp * 100) + '%', background: '#e74c3c' }"></div>
           </div>
@@ -572,6 +672,56 @@ const nextStage = async () => {
   border-radius: 20px; font-weight: bold; cursor: pointer;
   box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 50; animation: pulse 2s infinite;
 }
+
+/* GIAO DIỆN TRẠNG THÁI (BUFF/DEBUFF) */
+.fighter-card { position: relative; } /* Đảm bảo cha có relative */
+
+.status-effects-container {
+  position: absolute;
+  top: -15px; /* Lơ lửng trên đầu */
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+  z-index: 10;
+}
+
+.status-icon {
+  position: relative;
+  background: #1a1a24;
+  border: 1px solid #444;
+  border-radius: 4px;
+  font-size: 14px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+}
+
+.status-turns {
+  position: absolute;
+  bottom: -6px;
+  right: -6px;
+  background: #e74c3c;
+  color: white;
+  font-size: 9px;
+  font-weight: bold;
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border: 1px solid #222;
+}
+
+/* Đổi màu viền tùy theo hiệu ứng */
+.status-icon.stun { border-color: #f1c40f; } /* Vàng choáng */
+.status-icon.poison { border-color: #9b59b6; } /* Tím độc */
+.status-icon.buff_atk { border-color: #e67e22; } /* Cam Buff Lực */
+.status-icon.buff_spd { border-color: #3498db; } /* Xanh Buff Tốc */
 
 /* Animations */
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

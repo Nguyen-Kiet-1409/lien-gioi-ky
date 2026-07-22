@@ -11,12 +11,15 @@ const activeTab = ref('cards') // Mặc định mở tab Thẻ Bài
 // =====================================
 const editingId = ref(null) 
 const emptyCardForm = {
-  name: '', image: '', rarity: 'R', type: 'Đấu Sĩ', color: '#bdc3c7', stars: 1, lore: '',
+  name: '', image: '', rarity: 'R', color: '#bdc3c7', stars: 1, lore: '',
+  element: 'Lửa', 
+  role: 'Đấu Sĩ', 
+  
   stats: { hp: 1000, atk: 100, spd: 50 },
   skills: {
-    normal: { name: '', desc: '' },
-    active: { name: '', desc: '' },
-    ultimate: { name: '', desc: '' }
+    normal: { name: '', desc: '', effectType: 'damage', effectValue: 100, target: 'enemy_single' },
+    active: { name: '', desc: '', effectType: 'damage', effectValue: 150, target: 'enemy_single' },
+    ultimate: { name: '', desc: '', effectType: 'damage', effectValue: 250, target: 'enemy_all' }
   }
 }
 
@@ -115,9 +118,6 @@ const submitBanner = async () => {
 
 // =====================================
 // KHU VỰC 3: QUẢN LÝ ẢI & QUÁI VẬT (KẾT NỐI API)
-// =====================================
-// =====================================
-// KHU VỰC QUẢN LÝ CHƯƠNG & ẢI
 // =====================================
 const chaptersList = ref([])
 const editingChapterId = ref(null)
@@ -339,25 +339,52 @@ onMounted(async () => {
             <div class="basic-info-layout">
               <div class="basic-info-left">
                 <div class="form-grid">
-                  <div class="form-group">
+                  <div class="form-group" style="grid-column: span 2;">
                     <label>Tên nhân vật</label>
                     <input type="text" v-model="newCard.name" placeholder="VD: Ma Tôn Hắc Ám">
                   </div>
+                  
                   <div class="form-group">
                     <label>Độ hiếm</label>
                     <select v-model="newCard.rarity">
-                      <option value="R">R (Xám)</option><option value="SR">SR (Tím)</option><option value="SSR">SSR (Vàng)</option><option value="UR">UR (Đỏ)</option>
+                      <option value="R">R (Xám)</option>
+                      <option value="SR">SR (Tím)</option>
+                      <option value="SSR">SSR (Vàng)</option>
+                      <option value="UR">UR (Đỏ)</option>
                     </select>
                   </div>
-                  <div class="form-group">
-                    <label>Hệ / Loại</label>
-                    <select v-model="newCard.type">
-                      <option value="Đấu Sĩ">Đấu Sĩ</option><option value="Pháp Sư">Pháp Sư</option><option value="Hỗ Trợ">Hỗ Trợ</option><option value="Sát Thủ">Sát Thủ</option>
-                    </select>
-                  </div>
+
                   <div class="form-group">
                     <label>Mã màu (Hex)</label>
                     <input type="color" v-model="newCard.color" class="color-picker">
+                  </div>
+
+                  <!-- PHẦN CHỌN HỆ (NGUYÊN TỐ) -->
+                  <div class="form-group">
+                    <label>Hệ (Nguyên Tố)</label>
+                    <select v-model="newCard.element">
+                      <option value="Lửa">🔥 Lửa</option>
+                      <option value="Nước">💧 Nước</option>
+                      <option value="Điện">⚡ Điện</option>
+                      <option value="Đất">🪨 Đất</option>
+                      <option value="Gió">🌪️ Gió</option>
+                      <option value="Băng">❄️ Băng</option>
+                      <option value="Ánh Sáng">✨ Ánh Sáng</option>
+                      <option value="Ma">👻 Ma (Bóng Tối)</option>
+                    </select>
+                  </div>
+
+                  <!-- PHẦN CHỌN LOẠI (VAI TRÒ) -->
+                  <div class="form-group">
+                    <label>Loại (Vai Trò)</label>
+                    <select v-model="newCard.role">
+                      <option value="Đấu Sĩ">⚔️ Đấu Sĩ</option>
+                      <option value="Pháp Sư">🔮 Pháp Sư</option>
+                      <option value="Xạ Thủ">🏹 Xạ Thủ</option>
+                      <option value="Sát Thủ">🗡️ Sát Thủ</option>
+                      <option value="Đỡ Đòn">🛡️ Đỡ Đòn</option>
+                      <option value="Trợ Thủ">💖 Trợ Thủ</option>
+                    </select>
                   </div>
                 </div>
                 <div class="form-group full-width" style="margin-top: 15px; flex: 1;">
@@ -388,11 +415,62 @@ onMounted(async () => {
             </div>
           </div>
 
+          <!-- Phần 3: Kỹ năng nâng cao -->
           <div class="form-section">
-            <h3>3. Bộ Kỹ Năng</h3>
-            <div class="skill-group"><div class="skill-header normal">Đánh Thường</div><input type="text" v-model="newCard.skills.normal.name" placeholder="Tên chiêu..."><input type="text" v-model="newCard.skills.normal.desc" placeholder="Mô tả..."></div>
-            <div class="skill-group"><div class="skill-header active">Kỹ Năng Kích Hoạt</div><input type="text" v-model="newCard.skills.active.name" placeholder="Tên chiêu..."><input type="text" v-model="newCard.skills.active.desc" placeholder="Mô tả..."></div>
-            <div class="skill-group"><div class="skill-header ultimate">Tuyệt Kỹ (Ultimate)</div><input type="text" v-model="newCard.skills.ultimate.name" placeholder="Tên chiêu..."><input type="text" v-model="newCard.skills.ultimate.desc" placeholder="Mô tả..."></div>
+            <h3>3. Thiết Lập Kỹ Năng</h3>
+            
+            <!-- Dùng v-for lặp qua 3 skill để code gọn hơn -->
+            <div 
+              v-for="(skillData, skillKey) in newCard.skills" 
+              :key="skillKey" 
+              class="skill-group"
+            >
+              <div class="skill-header" :class="skillKey">
+                {{ skillKey === 'normal' ? 'Đánh Thường' : skillKey === 'active' ? 'Kỹ Năng (Kích Hoạt)' : 'Tuyệt Kỹ (Ultimate)' }}
+              </div>
+              
+              <div class="form-grid" style="gap: 10px; margin-bottom: 10px;">
+                <div class="form-group" style="margin: 0;">
+                  <input type="text" v-model="skillData.name" placeholder="Tên chiêu thức...">
+                </div>
+                <div class="form-group" style="margin: 0;">
+                  <input type="text" v-model="skillData.desc" placeholder="Mô tả hiệu ứng (VD: Gây 150% ST và làm choáng)...">
+                </div>
+              </div>
+
+              <!-- KHU VỰC CHỈ ĐỊNH THUẬT TOÁN HIỆU ỨNG -->
+              <div style="background: #111; padding: 10px; border-radius: 6px; border: 1px dashed #444; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 11px; color: #888;">Loại Hiệu Ứng</label>
+                  <select v-model="skillData.effectType" style="font-size: 12px; padding: 6px;">
+                    <option value="damage">💥 Gây Sát Thương</option>
+                    <option value="heal">💖 Hồi Máu</option>
+                    <option value="stun">💫 Làm Choáng (1 Lượt)</option>
+                    <option value="poison">☠️ Trúng Độc (Trừ máu mỗi lượt)</option>
+                    <option value="buff_atk">⚔️ Tăng ATK</option>
+                    <option value="buff_spd">⚡ Tăng Tốc Độ</option>
+                  </select>
+                </div>
+
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 11px; color: #888;">Chỉ số / Tỉ lệ (%)</label>
+                  <input type="number" v-model="skillData.effectValue" placeholder="VD: 150" style="font-size: 12px; padding: 6px;">
+                </div>
+
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 11px; color: #888;">Phạm Vi Mục Tiêu</label>
+                  <select v-model="skillData.target" style="font-size: 12px; padding: 6px;">
+                    <option value="enemy_single">🎯 1 Kẻ Địch</option>
+                    <option value="enemy_all">🌪️ Toàn Bộ Địch</option>
+                    <option value="ally_single">🛡️ 1 Đồng Minh</option>
+                    <option value="ally_all">✨ Toàn Bộ Đồng Minh</option>
+                    <option value="self">👤 Bản Thân</option>
+                  </select>
+                </div>
+
+              </div>
+            </div>
           </div>
 
           <div style="display: flex; gap: 15px; margin-top: 20px;">
